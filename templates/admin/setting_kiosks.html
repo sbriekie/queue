@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="w-7/9 mx-auto">
+
+  <!-- HEADER -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800">
+        Manajemen Layanan Kiosk
+        {% if current_satker %}
+        <span class="text-lg font-normal text-slate-500">
+          - {{ current_satker.nama }}
+        </span>
+        {% endif %}
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Total Layanan:
+        <span class="font-semibold text-slate-700">{{ menus|length }}</span>
+      </p>
+    </div>
+
+    <div class="mt-4 md:mt-0 flex items-center gap-3 flex-wrap">
+      {% if is_superadmin %}
+      <form method="GET">
+        <select name="satker" onchange="this.form.submit()"
+                class="bg-white border border-slate-300 text-sm rounded-lg w-64 p-2.5">
+          {% for s in satker_list %}
+          <option value="{{ s.kode_satker }}"
+            {{ 'selected' if s.kode_satker == selected_satker else '' }}>
+            {{ s.kode_satker }} - {{ s.nama }}
+          </option>
+          {% endfor %}
+        </select>
+      </form>
+      {% else %}
+      <span class="text-sm text-slate-600 bg-slate-100 px-3 py-2 rounded-lg border">
+        {{ current_satker.nama }}
+      </span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- FLASH -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <div class="mb-6 space-y-2">
+    {% for category, message in messages %}
+    <div class="px-4 py-3 rounded-lg text-sm
+      {{ 'bg-red-100 text-red-700 border' if category == 'danger'
+         else 'bg-green-100 text-green-700 border' if category == 'success'
+         else 'bg-blue-100 text-blue-700 border' }}">
+      {{ message }}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endwith %}
+
+  <!-- ADD FORM (+CSRF) -->
+  <div class="bg-white rounded-lg shadow p-4 mb-6">
+    <form method="POST" action="{{ url_for('admin.kiosk_menu_add') }}"
+          class="flex flex-col md:flex-row gap-3">
+      
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      
+      {% if is_superadmin %}
+      <input type="hidden" name="kode_satker" value="{{ selected_satker }}">
+      {% endif %}
+
+      <input name="prefix" placeholder="Prefix" required
+             class="w-28 border rounded-lg px-3 py-2 text-sm uppercase">
+
+      <input name="name" placeholder="Nama layanan" required
+             class="flex-1 border rounded-lg px-3 py-2 text-sm">
+
+      <input name="urutan" type="number" value="0"
+             class="w-28 border rounded-lg px-3 py-2 text-sm">
+
+      <button type="submit" class="bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700">
+        <i class="fas fa-plus mr-1"></i> Tambah
+      </button>
+    </form>
+  </div>
+
+  <!-- TABLE -->
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-100 uppercase text-xs">
+        <tr>
+          <th class="px-4 py-3">Prefix</th>
+          <th class="px-4 py-3">Nama</th>
+          <th class="px-4 py-3 text-center">Urutan</th>
+          <th class="px-4 py-3 text-center">Status</th>
+          <th class="px-4 py-3 text-center">Aksi</th>
+        </tr>
+      </thead>
+
+      <tbody class="divide-y">
+        {% for m in menus %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-3 font-semibold">{{ m.prefix }}</td>
+
+          <td class="px-4 py-3">
+            <div class="font-medium">{{ m.name }}</div>
+            {% if m.keterangan %}
+            <div class="text-xs text-slate-400">{{ m.keterangan }}</div>
+            {% endif %}
+          </td>
+
+          <td class="px-4 py-3 text-center">{{ m.urutan }}</td>
+
+          <td class="px-4 py-3 text-center">
+            {% if m.is_active %}
+            <span class="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">Aktif</span>
+            {% else %}
+            <span class="px-2 py-1 text-xs bg-slate-200 text-slate-600 rounded-full">Nonaktif</span>
+            {% endif %}
+          </td>
+
+          <td class="px-4 py-3 text-center">
+            <div class="flex justify-center gap-2">
+
+              <!-- EDIT BUTTON -->
+              <button type="button"
+                onclick="openEditModal(
+                  {{ m.id }},
+                  '{{ m.prefix }}',
+                  '{{ m.name|e }}',
+                  '{{ m.keterangan|default('', true)|e }}',
+                  {{ m.urutan }}
+                )"
+                class="text-amber-600 hover:bg-amber-50 p-2 rounded transition"
+                title="Edit">
+                ✏️
+              </button>
+
+              <!-- TOGGLE FORM (+CSRF) -->
+              <form method="POST"
+                    action="{{ url_for('admin.kiosk_menu_toggle', menu_id=m.id) }}"
+                    class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" 
+                        class="p-2 text-slate-500 hover:bg-slate-100 rounded transition"
+                        title="{{ 'Nonaktifkan' if m.is_active else 'Aktifkan' }}">
+                  {{ '⏸' if m.is_active else '▶' }}
+                </button>
+              </form>
+
+              <!-- DELETE FORM (+CSRF) -->
+              <form method="POST"
+                    action="{{ url_for('admin.kiosk_menu_delete', menu_id=m.id) }}"
+                    onsubmit="return confirm('Hapus layanan {{ m.name|e }}?')"
+                    class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" 
+                        class="p-2 text-red-600 hover:bg-red-50 rounded transition"
+                        title="Hapus">
+                  🗑
+                </button>
+              </form>
+
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="py-10 text-center text-slate-500">
+            Belum ada layanan kiosk
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- EDIT MODAL (+CSRF) -->
+<div id="editModal"
+     class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+    <h3 class="text-lg font-semibold mb-4">Edit Layanan</h3>
+
+    <form id="editForm" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Prefix</label>
+          <input type="text" name="prefix" id="editPrefix" required 
+                 class="w-full border rounded-lg px-3 py-2 uppercase">
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Nama Layanan</label>
+          <input type="text" name="name" id="editName" required 
+                 class="w-full border rounded-lg px-3 py-2">
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Keterangan</label>
+          <input type="text" name="keterangan" id="editKet" 
+                 class="w-full border rounded-lg px-3 py-2">
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Urutan</label>
+          <input type="number" name="urutan" id="editUrutan" 
+                 class="w-full border rounded-lg px-3 py-2">
+        </div>
+      </div>
+
+      <div class="flex gap-3 mt-6">
+        <button type="button" onclick="closeEditModal()"
+                class="flex-1 border border-slate-300 rounded-lg py-2 hover:bg-slate-50">Batal</button>
+        <button type="submit" 
+                class="flex-1 bg-blue-600 text-white rounded-lg py-2 hover:bg-blue-700">Simpan</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Fix: Properly declare variables
+const editModal = document.getElementById('editModal');
+const editForm = document.getElementById('editForm');
+const editPrefix = document.getElementById('editPrefix');
+const editName = document.getElementById('editName');
+const editKet = document.getElementById('editKet');
+const editUrutan = document.getElementById('editUrutan');
+
+function openEditModal(id, prefix, name, ket, urutan) {
+  editForm.action = '{{ url_for("admin.kiosk_menu_edit", menu_id=0) }}'.replace('0', id);
+  editPrefix.value = prefix;
+  editName.value = name;
+  editKet.value = ket || '';
+  editUrutan.value = urutan;
+  editModal.classList.remove('hidden');
+  editModal.classList.add('flex');
+}
+
+function closeEditModal() {
+  editModal.classList.add('hidden');
+  editModal.classList.remove('flex');
+}
+
+// Close on outside click
+editModal.addEventListener('click', e => {
+  if (e.target === editModal) closeEditModal();
+});
+
+// Close on Escape key
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !editModal.classList.contains('hidden')) {
+    closeEditModal();
+  }
+});
+</script>
+
+{% endblock %}

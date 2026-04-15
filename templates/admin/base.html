@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Antrian PST - Admin Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Font Awesome untuk Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Tema warna BPS -->
+  <style>
+    :root{ --primary:#2563eb; }
+    /* Dropdown animation */
+    .dropdown-menu {
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-10px);
+      transition: all .2s ease-in-out;
+    }
+    .dropdown:hover .dropdown-menu {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+    /* Active link styling */
+    .nav-link{ position:relative; }
+    .nav-link.active::after{
+      content:'';
+      position:absolute;
+      bottom:-4px;
+      left:0; right:0;
+      height:2px;
+      background-color: var(--primary);
+    }
+    /* Flash messages animation */
+    @keyframes slideIn {
+      from { transform: translateY(-100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .flash-message {
+      animation: slideIn 0.3s ease-out;
+    }
+  </style>
+  
+  {% block extra_css %}{% endblock %}
+</head>
+
+<body class="bg-slate-50 min-h-screen flex flex-col">
+
+  <!-- FLASH MESSAGES -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="fixed top-16 right-4 z-50 space-y-2 w-80">
+        {% for category, message in messages %}
+          <div class="flash-message rounded-lg px-4 py-3 shadow-lg text-sm font-medium flex items-center justify-between
+            {% if category == 'error' or category == 'danger' %}
+              bg-red-100 text-red-700 border border-red-200
+            {% elif category == 'success' %}
+              bg-green-100 text-green-700 border border-green-200
+            {% elif category == 'warning' %}
+              bg-yellow-100 text-yellow-700 border border-yellow-200
+            {% else %}
+              bg-blue-100 text-blue-700 border border-blue-200
+            {% endif %}">
+            <span>{{ message }}</span>
+            <button onclick="this.parentElement.remove()" class="ml-2 hover:opacity-70">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <!-- TOP NAVIGATION BAR -->
+  <nav class="bg-sky-500 text-white shadow-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+
+        <!-- Logo / Brand -->
+        <div class="flex-shrink-0 flex items-center gap-3">
+          <a href="{{ url_for('admin.dashboard') }}" class="text-xl font-semibold tracking-wide flex items-center gap-2">
+            <i class="fas fa-desktop"></i>
+            <span>Antrian PST</span>
+          </a>
+        </div>
+
+        <!-- Main Menu (Desktop) -->
+        <div class="hidden md:block">
+          <div class="ml-10 flex items-baseline space-x-1">
+
+            <!-- Dashboard -->
+            <a href="{{ url_for('admin.dashboard') }}"
+               class="nav-link px-3 py-2 rounded-md text-sm font-medium transition
+               {% if request.endpoint == 'admin.dashboard' %}
+                 text-white bg-white/10 active
+               {% else %}
+                 text-white/90 hover:text-white hover:bg-white/10
+               {% endif %}">
+              <i class="fas fa-chart-line mr-1"></i> Dashboard
+            </a>
+
+            <!-- Tickets -->
+            <a href="{{ url_for('admin.tickets_list') }}"
+               class="nav-link px-3 py-2 rounded-md text-sm font-medium transition
+               {% if request.endpoint and request.endpoint.startswith('admin.tickets') %}
+                 text-white bg-white/10 active
+               {% else %}
+                 text-white/90 hover:text-white hover:bg-white/10
+               {% endif %}">
+              <i class="fas fa-ticket-alt mr-1"></i> Tickets
+            </a>
+
+            <!-- Settings Dropdown - HANYA UNTUK ADMIN/SUPERADMIN -->
+            {% if g.user and g.user.role and g.user.role.name in ['admin', 'superadmin'] %}
+            <div class="dropdown relative inline-block">
+              <button type="button" 
+                      class="nav-link px-3 py-2 rounded-md text-sm font-medium flex items-center gap-1 transition
+                {% if request.endpoint and (
+                      request.endpoint.startswith('admin.users') or
+                      request.endpoint.startswith('admin.desks') or
+                      request.endpoint.startswith('admin.kiosk') or
+                      request.endpoint.startswith('admin.video') or
+                      request.endpoint.startswith('admin.ann') or
+                      request.endpoint.startswith('admin.chart')
+                    ) %}
+                  text-white bg-white/10 active
+                {% else %}
+                  text-white/90 hover:text-white hover:bg-white/10
+                {% endif %}">
+                <i class="fas fa-cog mr-1"></i>
+                <span>Settings</span>
+                <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </button>
+
+              <!-- Dropdown Menu -->
+              <div class="dropdown-menu absolute left-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black/5 z-50">
+                <div class="py-1" role="menu">
+                  <div class="px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-100">
+                    Manajemen
+                  </div>
+                  <a href="{{ url_for('admin.users_list') }}"
+                     class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-sky-600 transition
+                     {% if request.endpoint and request.endpoint.startswith('admin.users') %}bg-slate-50 text-sky-600 font-medium{% endif %}"
+                     role="menuitem">
+                     <i class="fas fa-users w-5"></i> Users
+                  </a>
+                  <a href="{{ url_for('admin.desks_list') }}"
+                     class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-sky-600 transition
+                     {% if request.endpoint and request.endpoint.startswith('admin.desks') %}bg-slate-50 text-sky-600 font-medium{% endif %}"
+                     role="menuitem">
+                     <i class="fas fa-desktop w-5"></i> Desks
+                  </a>
+                  <a href="{{ url_for('admin.kiosk_list') }}"
+                     class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-sky-600 transition
+                     {% if request.endpoint and request.endpoint.startswith('admin.kiosk') %}bg-slate-50 text-sky-600 font-medium{% endif %}"
+                     role="menuitem">
+                     <i class="fas fa-list-alt w-5"></i> Kiosk Menu
+                  </a>
+                  
+                  <div class="px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider border-t border-slate-100 mt-1">
+                    Konten Display
+                  </div>
+                  <a href="{{ url_for('admin.video_list') }}"
+                     class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-sky-600 transition
+                     {% if request.endpoint and request.endpoint.startswith('admin.video') %}bg-slate-50 text-sky-600 font-medium{% endif %}"
+                     role="menuitem">
+                     <i class="fas fa-video w-5"></i> Videos
+                  </a>
+                  <a href="{{ url_for('admin.ann_list') }}"
+                     class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-sky-600 transition
+                     {% if request.endpoint and request.endpoint.startswith('admin.ann') %}bg-slate-50 text-sky-600 font-medium{% endif %}"
+                     role="menuitem">
+                     <i class="fas fa-scroll w-5"></i> Rolling Text
+                  </a>
+                  <a href="{{ url_for('admin.chart_list') }}"
+                     class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-sky-600 transition
+                     {% if request.endpoint and request.endpoint.startswith('admin.chart') %}bg-slate-50 text-sky-600 font-medium{% endif %}"
+                     role="menuitem">
+                     <i class="fas fa-chart-bar w-5"></i> Grafik Data Strategis
+                  </a>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+
+            <!-- User Info & Logout -->
+            <div class="ml-4 flex items-center gap-3 pl-4 border-l border-white/20">
+              <span class="text-xs text-white/80 hidden lg:block">
+                {{ g.user.username if g.user else 'Guest' }}
+                {% if g.user and g.user.satker %}
+                  <span class="block text-[10px] opacity-70">{{ g.user.satker.nama }}</span>
+                {% endif %}
+              </span>
+              <a href="{{ url_for('admin.logout') }}"
+                 class="px-3 py-2 rounded-md text-sm font-medium text-red-100 hover:text-white hover:bg-red-600 transition flex items-center gap-1">
+                <i class="fas fa-sign-out-alt"></i> Logout
+              </a>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Mobile menu button -->
+        <div class="-mr-2 flex md:hidden">
+          <button type="button" 
+                  onclick="document.getElementById('mobile-menu').classList.toggle('hidden')"
+                  class="inline-flex items-center justify-center p-2 rounded-md text-white/90 hover:bg-white/10 focus:outline-none">
+            <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+            </svg>
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Mobile Menu -->
+    <div class="hidden md:hidden bg-sky-600" id="mobile-menu">
+      <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+        
+        <!-- Main Links -->
+        <a href="{{ url_for('admin.dashboard') }}"
+           class="block px-3 py-2 rounded-md text-base font-medium
+           {% if request.endpoint == 'admin.dashboard' %}text-white bg-white/10{% else %}text-white/90 hover:text-white hover:bg-white/10{% endif %}">
+          <i class="fas fa-chart-line w-6"></i> Dashboard
+        </a>
+        
+        <a href="{{ url_for('admin.tickets_list') }}"
+           class="block px-3 py-2 rounded-md text-base font-medium
+           {% if request.endpoint and request.endpoint.startswith('admin.tickets') %}text-white bg-white/10{% else %}text-white/90 hover:text-white hover:bg-white/10{% endif %}">
+          <i class="fas fa-ticket-alt w-6"></i> Tickets
+        </a>
+
+        <!-- Settings Section - HANYA UNTUK ADMIN/SUPERADMIN -->
+        {% if g.user and g.user.role and g.user.role.name in ['admin', 'superadmin'] %}
+        <div class="pt-4 pb-2">
+          <div class="px-3 text-xs font-semibold text-white/60 uppercase tracking-wider">
+            Settings
+          </div>
+          
+          <div class="mt-2 space-y-1">
+            <a href="{{ url_for('admin.users_list') }}"
+               class="block pl-9 pr-3 py-2 rounded-md text-sm font-medium
+               {% if request.endpoint and request.endpoint.startswith('admin.users') %}text-white bg-white/10{% else %}text-white/90 hover:text-white hover:bg-white/10{% endif %}">
+              Users
+            </a>
+            <a href="{{ url_for('admin.desks_list') }}"
+               class="block pl-9 pr-3 py-2 rounded-md text-sm font-medium
+               {% if request.endpoint and request.endpoint.startswith('admin.desks') %}text-white bg-white/10{% else %}text-white/90 hover:text-white hover:bg-white/10{% endif %}">
+              Desks
+            </a>
+            <a href="{{ url_for('admin.kiosk_list') }}"
+               class="block pl-9 pr-3 py-2 rounded-md text-sm font-medium
+               {% if request.endpoint and request.endpoint.startswith('admin.kiosk') %}text-white bg-white/10{% else %}text-white/90 hover:text-white hover:bg-white/10{% endif %}">
+              Kiosk Menu
+            </a>
+            <a href="{{ url_for('admin.video_list') }}"
+               class="block pl-9 pr-3 py-2 rounded-md text-sm font-medium
+               {% if request.endpoint and request.endpoint.startswith('admin.video') %}text-white bg-white/10{% else %}text-white/90 hover:text-white hover:bg-white/10{% endif %}">
+              Videos
+            </a>
+            <a href="{{ url_for('admin.ann_list') }}"
+               class="block pl-9 pr-3 py-2 rounded-md text-sm font-medium
+               {% if request.endpoint and request.endpoint.startswith('admin.ann') %}text-white bg-white/10{% else %}text-white/90 hover:text-white hover:bg-white/10{% endif %}">
+              Rolling Text
+            </a>
+            <a href="{{ url_for('admin.chart_list') }}"
+               class="block pl-9 pr-3 py-2 rounded-md text-sm font-medium
+               {% if request.endpoint and request.endpoint.startswith('admin.chart') %}text-white bg-white/10{% else %}text-white/90 hover:text-white hover:bg-white/10{% endif %}">
+              Grafik Data
+            </a>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Logout Mobile -->
+        <div class="pt-4 pb-2 border-t border-white/10 mt-2">
+          <a href="{{ url_for('admin.logout') }}"
+             class="block px-3 py-2 rounded-md text-base font-medium text-red-100 hover:text-white hover:bg-red-600">
+            <i class="fas fa-sign-out-alt w-6"></i> Logout
+          </a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTENT -->
+  <main class="flex-1 p-4 md:p-6 max-w-7xl mx-auto w-full">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="bg-slate-100 border-t border-slate-200 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col md:flex-row justify-between items-center text-sm text-slate-500">
+        <div>
+          &copy; 2026 BPS Prov. Gorontalo, Aplikasi Antrian PST
+        </div>
+        <div class="mt-2 md:mt-0 flex items-center gap-4">
+          <span>Server Time: <span id="server-time">--:--:--</span></span>
+          <span>v1.0.3</span>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Auto Flash Message Timeout -->
+  <script>
+    // Hapus flash message otomatis setelah 5 detik
+    setTimeout(() => {
+      document.querySelectorAll('.flash-message').forEach(el => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(-100%)';
+        el.style.transition = 'all 0.5s ease-out';
+        setTimeout(() => el.remove(), 500);
+      });
+    }, 5000);
+    
+    // Update server time (optional)
+    function updateTime() {
+      const now = new Date();
+      document.getElementById('server-time').textContent = now.toLocaleTimeString('id-ID', {hour12: false});
+    }
+    setInterval(updateTime, 1000);
+    updateTime();
+  </script>
+  
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

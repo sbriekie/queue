@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Kiosk - BPS Gorontalo</title>
+  <!-- CSRF TOKEN UNTUK FLASK -->
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <style>
+    body, html {
+      height: 100%;
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #e44800, #ffa600);
+      overflow: hidden;
+    }
+    .container-fluid { height: 100%; display: flex; flex-direction: row; }
+    .left-panel {
+      width: 66.66%;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      backdrop-filter: blur(6px);
+    }
+    .left-panel h2 {
+      color: white;
+      text-align: center;
+      margin-bottom: 30px;
+      text-shadow: 1px 2px 6px rgba(0,0,0,0.3);
+    }
+    .service-btn {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      border-radius: 40px;
+      padding: 20px;
+      margin: 10px 0;
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: white;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .service-btn .service-name {
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+
+    .service-btn .service-desc {
+      font-size: 0.9rem;
+      font-weight: 400;
+      font-style: italic;  /* <-- ITALIC */
+      opacity: 0.85;
+      margin-top: 5px;
+      display: block;
+    }
+
+    .service-btn:hover {
+      background: rgba(255,255,255,0.35);
+      transform: scale(1.05);
+      box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+    }
+    .right-panel {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .ticket-frame {
+      width: 80%;
+      max-width: 500px;
+      height: 70%;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 30px;
+      animation: fadeIn 0.4s ease;
+    }
+    .ticket-frame h3 { margin-bottom: 15px; font-weight: 600; color: #555; }
+    #ticketNumber {
+      font-size: 5rem;
+      color: #d44e00;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+    #printStatus {
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .printing { background: #fff3cd; color: #856404; }
+    .success { background: #d4edda; color: #155724; }
+    .error { background: #f8d7da; color: #721c24; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container-fluid">
+    <div class="left-panel">
+      <h2>Pilih Jenis Layanan PST<br>{{ satker_name }}</h2>
+      {% for s in services %}
+        <button class="service-btn" data-id="{{s.id}}" data-name="{{s.name}}">
+          <div class="service-name">{{ s.name }}</div>
+          {% if s.keterangan %}
+            <small class="service-desc">{{ s.keterangan }}</small>
+          {% endif %}
+        </button>
+      {% endfor %}
+    </div>
+
+    <div class="right-panel">
+      <div class="ticket-frame" id="ticketFrame">
+        <h3>Tiket Layanan Anda</h3>
+        <h1 id="ticketNumber">---</h1>
+        <div id="printStatus"></div>
+        <p>Silakan memilih jenis layanan<br>untuk mendapatkan nomor tiket...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Library QR Code -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    // AMBIL CSRF TOKEN DARI META TAG
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    
+    $(document).on("click", ".service-btn", function(){
+      let serviceId = $(this).data("id");
+      let serviceName = $(this).data("name");
+      let $btn = $(this);
+      
+      $btn.prop('disabled', true).css('opacity', '0.6');
+      
+      $.ajax({
+        url: "/api/ticket/new/" + serviceId,
+        method: "POST",
+        headers: { 
+          "X-Requested-With": "XMLHttpRequest",
+          "X-CSRF-Token": csrfToken
+        },
+        success: function(res) {
+          if(res.ticket) {
+            $("#ticketNumber").text(res.ticket);
+            $("#ticketFrame p").hide();
+            // Kirim nama satker dan kode satker ke fungsi print
+            printViaBrowser(res.ticket, serviceName, res.satker_name, res.kode_satker);
+          }
+        },
+        error: function(xhr) {
+          alert("Gagal mengambil tiket: " + (xhr.responseJSON?.error || "Unknown error"));
+          $btn.prop('disabled', false).css('opacity', '1');
+        }
+      });
+    });
+
+    function printViaBrowser(ticketNum, serviceName, satkerName, kodeSatker) {
+      let $status = $("#printStatus");
+      $status.removeClass('success error').addClass('printing').text("Mencetak tiket...").show();
+      
+      // Gunakan satkerName atau default jika tidak ada
+      let headerText = satkerName || "BPS SATKER";
+      
+      // Generate QR Code URL
+      let qrUrl = `https://queue.bps7500.my.id/display/${kodeSatker || '7500'}`;
+      
+      // Buat container untuk QR code (hidden)
+      let qrContainerId = 'qrcode-' + Date.now();
+      
+      let content = `
+        <html>
+        <head>
+          <style>
+            @page { size: 80mm auto; margin: 0; }
+            body { 
+              width: 80mm; 
+              font-family: Arial, sans-serif; 
+              text-align: center;
+              padding: 10mm 5mm;
+              margin: 0 auto;
+            }
+            .header { 
+              font-size: 12px; 
+              border-bottom: 2px solid black; 
+              padding-bottom: 5px; 
+              text-align: center;
+              margin: 0 auto;
+            }
+            .number { 
+              font-size: 48px; 
+              font-weight: bold; 
+              margin: 20px 0; 
+              color: #d44e00; 
+              text-align: center;
+            }
+            .service { 
+              font-size: 12px; 
+              margin-bottom: 10px; 
+              text-align: center;
+            }
+            .qr-section { 
+              margin: 15px auto; 
+              padding: 10px 0;
+              border-top: 1px dashed #ccc;
+              border-bottom: 1px dashed #ccc;
+              text-align: center;
+              width: 100%;
+            }
+            .qr-label { 
+              font-size: 9px; 
+              color: #666; 
+              margin-bottom: 8px;
+              text-align: center;
+              display: block;
+            }
+            /* Force center untuk QR code */
+            .qr-wrapper {
+              display: inline-block;
+              margin: 0 auto;
+              text-align: center;
+            }
+            .qr-code {
+              text-align: center;
+              margin: 0 auto;
+            }
+            /* Override style QRCode.js library */
+            .qr-code table {
+              margin: 0 auto !important;
+              border-collapse: collapse;
+            }
+            .qr-code td {
+              padding: 0 !important;
+              text-align: center !important;
+            }
+            .qr-code img {
+              display: block !important;
+              margin: 0 auto !important;
+              width: 80px !important;
+              height: 80px !important;
+            }
+            .qr-url {
+              font-size: 8px;
+              color: #333;
+              margin-top: 5px;
+              text-align: center;
+              word-break: break-all;
+              display: block;
+            }
+            .footer { 
+              font-size: 10px; 
+              padding-top: 10px; 
+              text-align: center;
+            }
+          </style>
+          <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
+        </head>
+        <body>
+          <div class="header">${headerText}</div>
+          <div style="font-size: 14px; margin: 10px 0; text-align: center;">NOMOR ANTRIAN</div>
+          <div class="number">${ticketNum}</div>
+          <div class="service">${serviceName}</div>
+          
+          <!-- QR CODE SECTION - ALL CENTERED -->
+          <div class="qr-section">
+            <div class="qr-label">Scan untuk melihat antrian:</div>
+            
+            <div class="qr-wrapper">
+              <div id="${qrContainerId}" class="qr-code"></div>
+              <div class="qr-url">${qrUrl}</div>
+            </div>
+          </div>
+          
+          <div class="footer">
+            ${new Date().toLocaleString('id-ID')}<br>
+            Silakan menunggu panggilan
+          </div>
+          
+          <script>
+            window.onload = function() {
+              // Generate QR code
+              var qrcode = new QRCode(document.getElementById("${qrContainerId}"), {
+                text: "${qrUrl}",
+                width: 80,
+                height: 80,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.M
+              });
+              
+              // Force center setelah render
+              setTimeout(function() {
+                var qrDiv = document.getElementById("${qrContainerId}");
+                var img = qrDiv.querySelector("img");
+                var table = qrDiv.querySelector("table");
+                
+                if (img) {
+                  img.style.display = "block";
+                  img.style.margin = "0 auto";
+                }
+                
+                if (table) {
+                  table.style.margin = "0 auto";
+                }
+              }, 100);
+            };
+          <\/script>
+        </body>
+        </html>
+      `;
+      
+      let win = window.open("", "_blank", "width=400,height=600");
+      win.document.write(content);
+      win.document.close();
+      win.focus();
+      
+      // Tunggu QR code selesai dirender
+      setTimeout(() => {
+        win.print();
+        win.close();
+        $status.removeClass('printing').addClass('success').text("Tiket berhasil dicetak!");
+        setTimeout(() => location.reload(), 3000);
+      }, 500); // Delay lebih lama untuk render QR
+    }
+  </script>
+</body>
+</html>

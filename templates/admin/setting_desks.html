@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="w-7/9 mx-auto">
+
+  <!-- HEADER -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800">
+        Manajemen Meja Layanan
+        {% if current_satker %}
+        <span class="text-lg font-normal text-slate-500">
+          - {{ current_satker.nama }}
+        </span>
+        {% endif %}
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Total Meja Aktif: <span class="font-semibold text-slate-700">{{ desks|length }}</span>
+      </p>
+    </div>
+
+    <div class="mt-4 md:mt-0 flex items-center gap-3 flex-wrap">
+      {% if is_superadmin %}
+      <form method="GET" action="{{ url_for('admin.desks_list') }}" class="flex items-center gap-2">
+        <select name="satker" onchange="this.form.submit()"
+                class="bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-64 p-2.5">
+          {% for s in satker_list %}
+          <option value="{{ s.kode_satker }}" {{ 'selected' if s.kode_satker == selected_satker else '' }}>
+            {{ s.kode_satker }} - {{ s.nama }}
+          </option>
+          {% endfor %}
+        </select>
+      </form>
+      {% else %}
+      <span class="text-sm text-slate-600 bg-slate-100 px-3 py-2 rounded-lg border border-slate-200">
+        <i class="fas fa-building mr-1"></i>
+        {{ current_satker.nama if current_satker else 'Unknown' }}
+      </span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- FLASH -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="mb-6 space-y-2">
+      {% for category, message in messages %}
+      <div class="px-4 py-3 rounded-lg text-sm
+        {{ 'bg-red-100 text-red-700 border border-red-200' if category == 'danger'
+           else 'bg-green-100 text-green-700 border border-green-200' if category == 'success'
+           else 'bg-blue-100 text-blue-700 border border-blue-200' if category == 'info'
+           else 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+        }}">
+        {{ message }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endwith %}
+
+  <!-- ADD FORM (DITAMBAH CSRF) -->
+  <div class="bg-white rounded-lg shadow p-4 mb-6">
+    <form method="POST" action="{{ url_for('admin.desk_add') }}" class="flex flex-col md:flex-row gap-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      
+      <input type="text" name="name" placeholder="Nama meja layanan (contoh: Meja 1, PPID, dll)" required
+             class="flex-1 border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+      
+      <input type="text" name="lokasi" placeholder="Lokasi fisik (opsional)"
+             class="flex-1 border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+      
+      {% if is_superadmin %}
+      <input type="hidden" name="kode_satker" value="{{ selected_satker }}">
+      {% endif %}
+      
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg transition whitespace-nowrap">
+        <i class="fas fa-plus mr-1"></i> Tambah Meja
+      </button>
+    </form>
+  </div>
+
+  <!-- TABLE -->
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left text-slate-600">
+        <thead class="text-xs text-slate-700 uppercase bg-slate-100">
+          <tr>
+            <th class="px-4 py-3">Nama Meja</th>
+            <th class="px-4 py-3">Lokasi</th>
+            <th class="px-4 py-3 text-center">Status</th>
+            <th class="px-4 py-3 text-center">Aksi</th>
+          </tr>
+        </thead>
+
+        <tbody class="divide-y divide-slate-100">
+          {% for d in desks %}
+          <tr class="hover:bg-slate-50">
+            <td class="px-4 py-3 font-medium text-slate-800">{{ d.name }}</td>
+            <td class="px-4 py-3 text-slate-500">{{ d.lokasi_fisik or '-' }}</td>
+
+            <td class="px-4 py-3 text-center">
+              {% if d.is_active %}
+              <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 inline-flex items-center gap-1">
+                <span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                Aktif
+              </span>
+              {% else %}
+              <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-200 text-slate-600 inline-flex items-center gap-1">
+                <span class="w-1.5 h-1.5 bg-slate-400 rounded-full"></span>
+                Nonaktif
+              </span>
+              {% endif %}
+            </td>
+
+            <td class="px-4 py-3 text-center">
+              <div class="flex justify-center items-center gap-2">
+
+                <!-- EDIT -->
+                <button onclick="openEditModal({{ d.id }}, '{{ d.name }}', '{{ d.lokasi_fisik or '' }}')"
+                        class="text-amber-600 hover:text-amber-800 p-2 rounded hover:bg-amber-50 transition" title="Edit">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                  </svg>
+                </button>
+
+                <!-- TOGGLE (TAMBAH CSRF) -->
+                <form method="POST" action="{{ url_for('admin.desk_toggle', desk_id=d.id) }}" class="inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit"
+                          class="{{ 'text-green-600 hover:text-green-800 hover:bg-green-50' if not d.is_active else 'text-slate-400 hover:text-slate-600 hover:bg-slate-50' }} p-2 rounded transition"
+                          title="{{ 'Aktifkan' if not d.is_active else 'Nonaktifkan' }}">
+                    {% if d.is_active %}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd" />
+                    </svg>
+                    {% else %}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                    </svg>
+                    {% endif %}
+                  </button>
+                </form>
+
+                <!-- DELETE (TAMBAH CSRF) -->
+                <form method="POST" action="{{ url_for('admin.desk_delete', desk_id=d.id) }}" 
+                      onsubmit="return confirm('Yakin hapus meja \'{{ d.name }}\'?')"
+                      class="inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="text-red-600 hover:text-red-800 hover:bg-red-50 p-2 rounded transition" title="Hapus">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                  </button>
+                </form>
+
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="py-12 text-center text-slate-500">
+              <p>Tidak ada meja layanan</p>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT MODAL (TAMBAH CSRF) -->
+<div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+    <h3 class="text-lg font-semibold text-slate-800 mb-4">Edit Meja</h3>
+    <form id="editForm" method="POST" action="">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Nama Meja</label>
+          <input type="text" name="name" id="editName" required
+                 class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Lokasi Fisik</label>
+          <input type="text" name="lokasi" id="editLokasi"
+                 class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button type="button" onclick="closeEditModal()"
+                class="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50">
+          Batal
+        </button>
+        <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          Simpan
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openEditModal(id, name, lokasi) {
+    document.getElementById('editForm').action = '{{ url_for("admin.desk_edit", desk_id=0) }}'.replace('0', id);
+    document.getElementById('editName').value = name;
+    document.getElementById('editLokasi').value = lokasi;
+    document.getElementById('editModal').classList.remove('hidden');
+    document.getElementById('editModal').classList.add('flex');
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').classList.add('hidden');
+    document.getElementById('editModal').classList.remove('flex');
+}
+
+document.getElementById('editModal').addEventListener('click', function(e) {
+    if (e.target === this) closeEditModal();
+});
+</script>
+
+{% endblock %}

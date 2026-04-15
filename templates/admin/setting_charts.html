@@ -1,0 +1,538 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="w-7/9 mx-auto">
+
+  <!-- HEADER -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800">
+        Manajemen Chart
+        {% if current_satker %}
+        <span class="text-lg font-normal text-slate-500">
+          - {{ current_satker.nama }}
+        </span>
+        {% endif %}
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Total Chart:
+        <span class="font-semibold text-slate-700">{{ charts|length }}</span>
+      </p>
+    </div>
+
+    <!-- TOOLBAR -->
+    <div class="mt-4 md:mt-0 flex items-center gap-3 flex-wrap">
+      {% if is_superadmin %}
+      <form method="GET" action="{{ url_for('admin.chart_list') }}">
+        <select name="satker" onchange="this.form.submit()"
+                class="bg-white border border-slate-300 text-slate-700 text-sm rounded-lg
+                       focus:ring-blue-500 focus:border-blue-500 block w-64 p-2.5">
+          {% for s in satker_list %}
+          <option value="{{ s.kode_satker }}"
+            {% if s.kode_satker == selected_satker %}selected{% endif %}>
+            {{ s.kode_satker }} - {{ s.nama }}
+          </option>
+          {% endfor %}
+        </select>
+      </form>
+      {% endif %}
+      
+      <button onclick="openAddModal()"
+              class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">
+        <i class="fas fa-plus mr-1"></i> Tambah Chart
+      </button>
+    </div>
+  </div>
+
+  <!-- FLASH MESSAGE -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="mb-6 space-y-2">
+      {% for category, message in messages %}
+      <div class="px-4 py-3 rounded-lg text-sm
+        {% if category == 'danger' %}
+          bg-red-100 text-red-700 border border-red-200
+        {% elif category == 'success' %}
+          bg-green-100 text-green-700 border border-green-200
+        {% else %}
+          bg-blue-100 text-blue-700 border border-blue-200
+        {% endif %}">
+        {{ message }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endwith %}
+
+  <!-- CHARTS TABLE -->
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left text-slate-600">
+        <thead class="text-xs text-slate-700 uppercase bg-slate-100">
+          <tr>
+            <th class="px-4 py-3">Judul</th>
+            <th class="px-4 py-3">Slug</th>
+            <th class="px-4 py-3">Tipe</th>
+            <th class="px-4 py-3">Refresh (detik)</th>
+            <th class="px-4 py-3">Dibuat</th>
+            <th class="px-4 py-3 text-center">Aksi</th>
+          </tr>
+        </thead>
+
+        <tbody class="divide-y divide-slate-100">
+          {% for c in charts %}
+          <tr class="hover:bg-slate-50 transition-colors">
+            <td class="px-4 py-3 font-medium text-slate-800">
+              {{ c.judul }}
+              {% if c.data_json and c.data_json.labels %}
+              <div class="text-xs text-slate-400 mt-1">
+                {{ c.data_json.labels|length }} data points
+              </div>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              <code class="bg-slate-100 px-2 py-1 rounded text-xs">{{ c.slug }}</code>
+            </td>
+            <td class="px-4 py-3">
+              <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                {{ c.tipe_chart }}
+              </span>
+            </td>
+            <td class="px-4 py-3">{{ c.refresh_detik }}s</td>
+            <td class="px-4 py-3 text-slate-500">
+              <div class="text-xs">{{ c.created_by }}</div>
+              <div class="text-xs text-slate-400">{{ c.created_at.strftime('%d/%m/%Y') }}</div>
+            </td>
+            <td class="px-4 py-3 text-center">
+              <div class="flex justify-center items-center gap-2">
+                
+                <!-- Preview Button -->
+                <button type="button" onclick="previewChart('{{ c.slug }}')"
+                        class="text-green-600 hover:text-green-800 p-2 rounded hover:bg-green-50 transition"
+                        title="Preview">
+                  👁️
+                </button>
+
+                <!-- Edit Button -->
+                <button type="button"
+                        onclick='openEditModal({{ c.id|tojson }}, {{ c.judul|tojson }}, {{ c.slug|tojson }}, {{ c.tipe_chart|tojson }}, {{ c.data_json|tojson }}, {{ c.opsi_animasi|tojson }}, {{ c.refresh_detik|tojson }})'
+                        class="text-amber-600 hover:text-amber-800 p-2 rounded hover:bg-amber-50 transition"
+                        title="Edit">
+                  ✏️
+                </button>
+
+                <!-- Delete Form -->
+                <form method="POST"
+                      action="{{ url_for('admin.chart_delete', chart_id=c.id) }}"
+                      onsubmit="return confirm('Yakin ingin menghapus chart ini? Data yang sudah dihapus tidak bisa dikembalikan.')"
+                      class="inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit"
+                          class="text-red-600 hover:text-red-800 hover:bg-red-50 p-2 rounded transition"
+                          title="Hapus">
+                    🗑️
+                  </button>
+                </form>
+
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="py-12 text-center text-slate-500">
+              <p class="text-lg font-medium text-slate-600">Belum ada chart</p>
+              <p class="text-sm mt-1">Tambahkan chart baru menggunakan tombol di atas</p>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- ADD MODAL -->
+<div id="addModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 overflow-y-auto">
+  <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-4xl mx-4 my-8">
+    <h3 class="text-lg font-semibold text-slate-800 mb-4">Tambah Chart Baru</h3>
+
+    <form id="addForm" method="POST" action="{{ url_for('admin.chart_add') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if is_superadmin %}
+      <input type="hidden" name="kode_satker" value="{{ selected_satker }}">
+      {% endif %}
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Left Column -->
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Judul Chart <span class="text-red-500">*</span></label>
+            <input type="text" name="judul" required placeholder="Contoh: Persentase Penduduk Miskin"
+                   class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Slug <span class="text-red-500">*</span></label>
+            <input type="text" name="slug" required placeholder="contoh: kemiskinan-2024" 
+                   pattern="[a-z0-9-]+"
+                   title="Hanya huruf kecil, angka, dan dash"
+                   class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <p class="text-xs text-slate-500 mt-1">URL friendly: huruf kecil, angka, dash (tanpa spasi)</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">Tipe Chart</label>
+              <select name="tipe_chart" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+                {% for type in chart_types %}
+                <option value="{{ type }}" {% if type == 'line' %}selected{% endif %}>
+                  {{ type|title }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">Refresh (detik)</label>
+              <input type="number" name="refresh_detik" value="60" min="10"
+                     class="w-full border border-slate-300 rounded-lg px-3 py-2">
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column -->
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">
+              Data JSON 
+              <button type="button" onclick="formatJSON('add_data_json')" class="text-xs text-blue-600 hover:underline ml-2">Format JSON</button>
+            </label>
+            <textarea name="data_json" id="add_data_json" rows="6" required
+                      class="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder='{"labels": ["2020","2021"], "datasets": [{"label": "Data", "data": [10,20]}]}'></textarea>
+            <p class="text-xs text-slate-500 mt-1">Format: labels (array) dan datasets (array)</p>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">
+              Opsi Animasi
+              <button type="button" onclick="formatJSON('add_opsi_animasi')" class="text-xs text-blue-600 hover:underline ml-2">Format JSON</button>
+            </label>
+            <textarea name="opsi_animasi" id="add_opsi_animasi" rows="3"
+                      class="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder='{"duration": 2000, "easing": "easeOutQuart"}'>{% raw %}{"duration": 2000, "easing": "easeOutQuart"}{% endraw %}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex gap-3 mt-6 pt-4 border-t">
+        <button type="button" onclick="closeAddModal()"
+                class="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50">
+          Batal
+        </button>
+        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <i class="fas fa-save mr-1"></i> Simpan Chart
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- EDIT MODAL -->
+<div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 overflow-y-auto">
+  <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-4xl mx-4 my-8">
+    <h3 class="text-lg font-semibold text-slate-800 mb-4">Edit Chart</h3>
+
+    <form id="editForm" method="POST" action="">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Left Column -->
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Judul Chart <span class="text-red-500">*</span></label>
+            <input type="text" name="judul" id="edit_judul" required
+                   class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Slug <span class="text-red-500">*</span></label>
+            <input type="text" name="slug" id="edit_slug" required
+                   class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">Tipe Chart</label>
+              <select name="tipe_chart" id="edit_tipe_chart" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+                {% for type in chart_types %}
+                <option value="{{ type }}">{{ type|title }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">Refresh (detik)</label>
+              <input type="number" name="refresh_detik" id="edit_refresh_detik" min="10"
+                     class="w-full border border-slate-300 rounded-lg px-3 py-2">
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column -->
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">
+              Data JSON
+              <button type="button" onclick="formatJSON('edit_data_json')" class="text-xs text-blue-600 hover:underline ml-2">Format JSON</button>
+              <button type="button" onclick="validateJSON('edit_data_json')" class="text-xs text-green-600 hover:underline ml-2">Validate</button>
+            </label>
+            <textarea name="data_json" id="edit_data_json" rows="6" required
+                      class="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">
+              Opsi Animasi
+              <button type="button" onclick="formatJSON('edit_opsi_animasi')" class="text-xs text-blue-600 hover:underline ml-2">Format JSON</button>
+            </label>
+            <textarea name="opsi_animasi" id="edit_opsi_animasi" rows="3"
+                      class="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex gap-3 mt-6 pt-4 border-t">
+        <button type="button" onclick="closeEditModal()"
+                class="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50">
+          Batal
+        </button>
+        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <i class="fas fa-save mr-1"></i> Simpan Perubahan
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- PREVIEW MODAL -->
+<div id="previewModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-3xl mx-4">
+    <div class="flex justify-between items-center mb-4">
+      <h3 class="text-lg font-semibold text-slate-800">Preview Chart</h3>
+      <button onclick="closePreviewModal()" class="text-slate-400 hover:text-slate-600">
+        <i class="fas fa-times text-xl"></i>
+      </button>
+    </div>
+    
+    <div class="bg-slate-50 rounded-lg p-4 mb-4" style="height: 300px;">
+      <canvas id="previewCanvas"></canvas>
+    </div>
+    
+    <div class="text-xs text-slate-500 font-mono bg-slate-100 p-3 rounded overflow-x-auto">
+      <strong>Endpoint API:</strong> <span id="previewEndpoint"></span>
+    </div>
+    
+    <div class="mt-4 flex justify-end">
+      <button onclick="closePreviewModal()" class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300">
+        Tutup
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// Modal Controls
+const addModal = document.getElementById('addModal');
+const editModal = document.getElementById('editModal');
+const previewModal = document.getElementById('previewModal');
+let previewChartInstance = null;
+
+function openAddModal() {
+  addModal.classList.remove('hidden');
+  addModal.classList.add('flex');
+}
+
+function closeAddModal() {
+  addModal.classList.add('hidden');
+  addModal.classList.remove('flex');
+  document.getElementById('addForm').reset();
+}
+
+function openEditModal(id, judul, slug, tipeChart, dataJson, opsiAnimasi, refreshDetik) {
+  document.getElementById('editForm').action = '{{ url_for("admin.chart_edit", chart_id=0) }}'.replace('0', id);
+  document.getElementById('edit_judul').value = judul;
+  document.getElementById('edit_slug').value = slug;
+  document.getElementById('edit_tipe_chart').value = tipeChart;
+  document.getElementById('edit_refresh_detik').value = refreshDetik;
+  
+  // Format JSON dengan indentation
+  document.getElementById('edit_data_json').value = JSON.stringify(dataJson, null, 2);
+  document.getElementById('edit_opsi_animasi').value = JSON.stringify(opsiAnimasi, null, 2);
+  
+  editModal.classList.remove('hidden');
+  editModal.classList.add('flex');
+}
+
+function closeEditModal() {
+  editModal.classList.add('hidden');
+  editModal.classList.remove('flex');
+}
+
+// JSON Helpers
+function formatJSON(textareaId) {
+  const textarea = document.getElementById(textareaId);
+  try {
+    const obj = JSON.parse(textarea.value);
+    textarea.value = JSON.stringify(obj, null, 2);
+    textarea.classList.remove('border-red-500');
+  } catch (e) {
+    textarea.classList.add('border-red-500');
+    alert('JSON tidak valid: ' + e.message);
+  }
+}
+
+function validateJSON(textareaId) {
+  const textarea = document.getElementById(textareaId);
+  try {
+    JSON.parse(textarea.value);
+    textarea.classList.remove('border-red-500');
+    textarea.classList.add('border-green-500');
+    setTimeout(() => textarea.classList.remove('border-green-500'), 1000);
+    alert('JSON Valid!');
+  } catch (e) {
+    textarea.classList.add('border-red-500');
+    alert('JSON tidak valid: ' + e.message);
+  }
+}
+
+// Preview Functionality
+function previewChart(slug) {
+  const kodeSatker = '{{ selected_satker }}';
+  
+  // Construct URL menggunakan url_for agar konsisten dengan routing Flask
+  const baseUrl = "{{ url_for('admin.chart_preview', slug='') }}";
+  const url = `${baseUrl}${slug}?satker=${encodeURIComponent(kodeSatker)}`;
+  
+  fetch(url, {
+    credentials: 'same-origin', // Penting untuk autentikasi session
+    headers: {
+      'Accept': 'application/json'
+    }
+  })
+    .then(res => {
+      if (!res.ok) {
+        if (res.status === 404) throw new Error('Chart tidak ditemukan');
+        throw new Error(`Error ${res.status}: ${res.statusText}`);
+      }
+      return res.json();
+    })
+    .then(response => {
+      // Struktur response: { success: true, chart: {...} }
+      if (response.success && response.chart) {
+        const chart = response.chart;
+        
+        // Update endpoint display
+        document.getElementById('previewEndpoint').textContent = 
+          `/admin/charts/preview/${chart.slug}`;
+        
+        // Tampilkan modal
+        previewModal.classList.remove('hidden');
+        previewModal.classList.add('flex');
+        
+        // Destroy chart lama jika ada
+        const ctx = document.getElementById('previewCanvas').getContext('2d');
+        if (previewChartInstance) {
+          previewChartInstance.destroy();
+        }
+        
+        // Validasi data_json minimal
+        const chartData = chart.data_json || { labels: [], datasets: [] };
+        if (!chartData.datasets || chartData.datasets.length === 0) {
+          console.warn('Chart data kosong atau tidak memiliki datasets');
+        }
+        
+        // Konfigurasi Chart.js
+        const config = {
+          type: chart.tipe_chart || 'bar',
+          data: chartData,
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: chart.judul || 'Preview Chart',
+                font: { size: 16, weight: 'bold' },
+                padding: { top: 10, bottom: 20 }
+              },
+              legend: {
+                display: true,
+                position: 'bottom'
+              }
+            },
+            // Gunakan opsi_animasi dari database atau default
+            animation: chart.opsi_animasi || { 
+              duration: 2000, 
+              easing: 'easeOutQuart' 
+            }
+          }
+        };
+        
+        // Render chart baru
+        previewChartInstance = new Chart(ctx, config);
+        
+      } else {
+        alert('Data chart tidak valid atau chart tidak ditemukan');
+      }
+    })
+    .catch(err => {
+      console.error('Preview Error:', err);
+      alert('Gagal memuat preview: ' + err.message);
+    });
+}
+
+function closePreviewModal() {
+  previewModal.classList.add('hidden');
+  previewModal.classList.remove('flex');
+  if (previewChartInstance) {
+    previewChartInstance.destroy();
+    previewChartInstance = null;
+  }
+}
+
+// Close modals on outside click
+window.onclick = function(event) {
+  if (event.target == addModal) closeAddModal();
+  if (event.target == editModal) closeEditModal();
+  if (event.target == previewModal) closePreviewModal();
+}
+
+// Escape key to close
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    closeAddModal();
+    closeEditModal();
+    closePreviewModal();
+  }
+});
+
+// Auto-format JSON on load untuk textarea
+document.addEventListener('DOMContentLoaded', function() {
+  const textareas = document.querySelectorAll('textarea[id$="_json"]');
+  textareas.forEach(ta => {
+    ta.addEventListener('blur', function() {
+      if (this.value.trim()) {
+        try {
+          const obj = JSON.parse(this.value);
+          this.value = JSON.stringify(obj, null, 2);
+        } catch(e) {
+          // Biarkan saja jika invalid, nanti divalidate pas submit
+        }
+      }
+    });
+  });
+});
+</script>
+
+{% endblock %}

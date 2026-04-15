@@ -1,0 +1,591 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="w-7/9 mx-auto">
+
+  <!-- HEADER -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800" id="dashboard-title">
+        Dashboard - {{ session_start.strftime('%d/%m/%Y %H:%M') }} WITA
+      </h1>
+    </div>
+    <div class="mt-4 md:mt-0 flex items-center gap-3 flex-wrap">
+      <!-- AUTO REFRESH INDICATOR -->
+      <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-green-100 text-green-700">
+        <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2" id="refresh-indicator"></span>
+        <span id="refresh-text">Live</span>
+      </span>
+      <span class="text-sm text-slate-500" id="current-time">-</span>
+      
+      <!-- SATKER SELECTOR (HANYA SUPERADMIN) -->
+      {% if g.user.role.name == 'superadmin' %}
+      <div class="relative">
+        <select id="satker-selector" onchange="changeSatker(this.value)" 
+                class="bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-56 p-2">
+          <option value="">Pilih Satker...</option>
+          {% for satker in satker_list %}
+          <option value="{{ satker.kode_satker }}" {% if satker.kode_satker == selected_satker %}selected{% endif %}>
+            {{ satker.kode_satker }} - {{ satker.nama }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <input type="hidden" id="satker-selector" value="{{ selected_satker }}">
+      <span class="text-sm text-slate-600 bg-slate-100 px-3 py-1 rounded-lg">
+        {{ g.user.satker.nama }}
+      </span>
+      {% endif %}
+      
+      <!-- SWITCH TOGGLE -->
+      <div class="flex items-center bg-slate-200 rounded-lg p-1">
+        <button id="btn-realtime" onclick="switchView('realtime')" 
+                class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 bg-white text-slate-800 shadow-sm">
+          Real-time
+        </button>
+        <button id="btn-daily" onclick="switchView('daily')" 
+                class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 text-slate-600 hover:text-slate-800">
+          30 Hari
+        </button>
+        <button id="btn-monthly" onclick="switchView('monthly')" 
+                class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 text-slate-600 hover:text-slate-800">
+          12 Bulan
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CARDS 6 METRIK -->
+  <div class="grid grid-cols-3 gap-4 mb-6">
+    <div class="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1" id="label-total">Total Hari Ini</h3>
+      <div class="text-2xl font-bold text-slate-800" id="total-today">0</div>
+      <div class="text-xs text-slate-400 mt-1" id="sublabel-total">tiket dibuat</div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-4 border-l-4 border-yellow-500" id="card-waiting">
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Menunggu</h3>
+      <div class="text-2xl font-bold text-yellow-600" id="waiting-count">0</div>
+      <div class="text-xs text-slate-400 mt-1">dalam antrian</div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-4 border-l-4 border-green-500" id="card-serving">
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Dilayani</h3>
+      <div class="text-2xl font-bold text-green-600" id="serving-now">0</div>
+      <div class="text-xs text-slate-400 mt-1">aktif sekarang</div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-4 border-l-4 border-slate-500">
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1" id="label-done">Selesai</h3>
+      <div class="text-2xl font-bold text-slate-600" id="done-count">0</div>
+      <div class="text-xs text-slate-400 mt-1" id="sublabel-done">hari ini</div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-4 border-l-4 border-orange-500">
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Avg Tunggu</h3>
+      <div class="text-2xl font-bold text-slate-800">
+        <span id="avg-wait">0</span><span class="text-sm font-normal text-slate-500"> m</span>
+      </div>
+      <div class="text-xs text-slate-400 mt-1">rata-rata</div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-4 border-l-4 border-purple-500">
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Avg Layanan</h3>
+      <div class="text-2xl font-bold text-slate-800">
+        <span id="avg-service">0</span><span class="text-sm font-normal text-slate-500"> m</span>
+      </div>
+      <div class="text-xs text-slate-400 mt-1">rata-rata</div>
+    </div>
+  </div>
+
+  <!-- CARDS GRAFIK -->
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+    <div class="bg-white rounded-lg shadow p-6">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-semibold text-slate-700">Pengunjung</h3>
+        <span class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded" id="badge-visitor">10 m</span>
+      </div>
+      <div class="h-60"><canvas id="visitorChart"></canvas></div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-semibold text-slate-700">Lama Tunggu</h3>
+        <span class="text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded">menit</span>
+      </div>
+      <div class="h-60"><canvas id="waitChart"></canvas></div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-semibold text-slate-700">Lama Pelayanan</h3>
+        <span class="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">menit</span>
+      </div>
+      <div class="h-60"><canvas id="serviceChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- STATUS MEJA & PERFORMA (REALTIME ONLY) -->
+  <div id="desk-status-section" class="mb-6">
+    <div class="bg-white rounded-lg shadow p-6">
+      <div class="flex justify-between items-center mb-6">
+        <div>
+          <h3 class="text-lg font-semibold text-slate-700">Status Meja & Performa</h3>
+          <p class="text-sm text-slate-500 mt-1">Monitoring realtime semua meja (aktif & nonaktif)</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <!-- Counter Meja -->
+          <div id="desk-counter" class="text-xs bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+            <span class="text-slate-400">Loading...</span>
+          </div>
+          <!-- Live Indicator -->
+          <div class="flex items-center gap-2 bg-green-50 px-3 py-1.5 rounded-full border border-green-200">
+            <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            <span class="text-xs font-medium text-green-700">Live</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-slate-200 bg-slate-50/50">
+              <th class="py-3 px-4 text-xs font-semibold text-slate-500 uppercase w-12 text-center">No</th>
+              <th class="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Nama Meja</th>
+              <th class="py-3 px-4 text-xs font-semibold text-slate-500 uppercase text-center w-32">Status</th>
+              <th class="py-3 px-4 text-xs font-semibold text-slate-500 uppercase text-right w-40">Tiket Dilayani</th>
+            </tr>
+          </thead>
+          <tbody id="desk-performance-table" class="divide-y divide-slate-100">
+            <!-- Diisi via JS -->
+          </tbody>
+        </table>
+      </div>
+      
+      <div id="desk-empty-state" class="hidden text-center py-12 text-slate-400">
+        <i class="fas fa-desktop text-4xl mb-3 text-slate-300"></i>
+        <p class="text-sm">Tidak ada data meja</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<script>
+  /* ---------- CONFIG ---------- */
+  const COLORS = { primary:'#2563eb', success:'#10b981', warning:'#f59e0b', danger:'#ef4444', purple:'#8b5cf6', slate:'#64748b' };
+  let charts = {}, refreshInterval, deskStatusInterval, currentView = 'realtime';
+  let currentSatker = '{{ selected_satker }}';
+  let isRefreshing = false;
+
+  const VIEW_CONFIG = {
+    realtime: {
+      title: 'Dashboard - {{ session_start.strftime("%d/%m/%Y %H:%M") }} WITA',
+      labels: { total: 'Total Hari Ini', done: 'Selesai', subtotal: 'tiket dibuat', subdone: 'hari ini' },
+      badge: '10 m',
+      showWaiting: true,
+      showServing: true,
+      showDeskStatus: true,
+      refreshInterval: 10000, // 10 detik untuk charts
+      deskRefreshInterval: 5000, // 5 detik untuk meja
+      api: {
+        summary: "{{ url_for('admin.analytics_summary') }}",
+        charts: "{{ url_for('admin.analytics_realtime') }}",
+        desks: "{{ url_for('admin.analytics_desk_status') }}"
+      }
+    },
+    daily: {
+      title: 'Dashboard - 30 Hari Terakhir',
+      labels: { total: 'Total 30 Hari', done: 'Selesai', subtotal: 'tiket total', subdone: '30 hari' },
+      badge: 'per hari',
+      showWaiting: false,
+      showServing: false,
+      showDeskStatus: false,
+      refreshInterval: 0,
+      api: {
+        summary: "{{ url_for('admin.analytics_summary_daily') }}",
+        charts: "{{ url_for('admin.analytics_daily') }}"
+      }
+    },
+    monthly: {
+      title: 'Dashboard - 12 Bulan Terakhir',
+      labels: { total: 'Total 12 Bulan', done: 'Selesai', subtotal: 'tiket total', subdone: '12 bulan' },
+      badge: 'per bulan',
+      showWaiting: false,
+      showServing: false,
+      showDeskStatus: false,
+      refreshInterval: 0,
+      api: {
+        summary: "{{ url_for('admin.analytics_summary_monthly') }}",
+        charts: "{{ url_for('admin.analytics_monthly') }}"
+      }
+    }
+  };
+
+  /* ---------- PLUGIN LABEL ANGKA ---------- */
+  const dataLabelsPlugin = {
+    id: 'dataLabels',
+    afterDatasetsDraw(chart, args, options) {
+      const ctx = chart.ctx;
+      chart.data.datasets.forEach((dataset, datasetIndex) => {
+        const meta = chart.getDatasetMeta(datasetIndex);
+        if (meta.hidden) return;
+        
+        ctx.save();
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        
+        meta.data.forEach((datapoint, index) => {
+          const value = dataset.data[index];
+          if (value === null || value === undefined || value === 0) return;
+          
+          const x = datapoint.x;
+          const y = datapoint.y;
+          const text = value.toString();
+          const textWidth = ctx.measureText(text).width;
+          
+          // Background putih
+          ctx.fillStyle = 'rgba(255,255,255,0.9)';
+          ctx.fillRect(x - textWidth/2 - 2, y - 15, textWidth + 4, 12);
+          
+          // Teks warna sesuai dataset
+          if (datasetIndex === 0) ctx.fillStyle = '#2563eb';
+          else if (datasetIndex === 1) ctx.fillStyle = '#dc2626';
+          else ctx.fillStyle = '#7c3aed';
+          
+          ctx.fillText(text, x, y - 5);
+        });
+        ctx.restore();
+      });
+    }
+  };
+
+  /* ---------- CHANGE SATKER ---------- */
+  function changeSatker(kodeSatker) {
+    if (!kodeSatker) return;
+    currentSatker = kodeSatker;
+    
+    const url = new URL(window.location);
+    url.searchParams.set('satker', kodeSatker);
+    window.history.pushState({}, '', url);
+    
+    Object.values(charts).forEach(chart => chart.destroy());
+    charts = {};
+    initCharts();
+    updateAll();
+    
+    if (currentView === 'realtime') {
+      fetchDeskStatus(); // Refresh meja langsung
+    }
+  }
+
+  /* ---------- SWITCH VIEW ---------- */
+  function switchView(view) {
+    if (currentView === view) return;
+    currentView = view;
+    
+    ['realtime', 'daily', 'monthly'].forEach(v => {
+      const btn = document.getElementById(`btn-${v}`);
+      if (v === view) {
+        btn.className = 'px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 bg-white text-slate-800 shadow-sm';
+      } else {
+        btn.className = 'px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 text-slate-600 hover:text-slate-800';
+      }
+    });
+    
+    const config = VIEW_CONFIG[view];
+    document.getElementById('dashboard-title').textContent = config.title;
+    document.getElementById('label-total').textContent = config.labels.total;
+    document.getElementById('label-done').textContent = config.labels.done;
+    document.getElementById('sublabel-total').textContent = config.labels.subtotal;
+    document.getElementById('sublabel-done').textContent = config.labels.subdone;
+    document.getElementById('badge-visitor').textContent = config.badge;
+    
+    document.getElementById('card-waiting').style.display = config.showWaiting ? 'block' : 'none';
+    document.getElementById('card-serving').style.display = config.showServing ? 'block' : 'none';
+    document.getElementById('desk-status-section').style.display = config.showDeskStatus ? 'block' : 'none';
+    
+    Object.values(charts).forEach(chart => chart.destroy());
+    charts = {};
+    initCharts();
+    
+    // Clear intervals
+    if (refreshInterval) clearInterval(refreshInterval);
+    if (deskStatusInterval) clearInterval(deskStatusInterval);
+    
+    updateAll();
+    
+    // Setup intervals
+    if (config.refreshInterval > 0) {
+      refreshInterval = setInterval(updateAll, config.refreshInterval);
+    }
+    
+    if (view === 'realtime' && config.deskRefreshInterval) {
+      fetchDeskStatus(); // Panggil sekali
+      deskStatusInterval = setInterval(fetchDeskStatus, config.deskRefreshInterval);
+    }
+  }
+
+  /* ---------- CHART INIT ---------- */
+  function initCharts() {
+    const commonOpt = {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, position: 'top', labels: { usePointStyle: true, font: { size: 10 } } },
+        tooltip: { enabled: true },
+        zoom: { pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } }
+      },
+      scales: {
+        x: { type: 'category', grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
+        y: { display: false } // HIDE Y-AXIS
+      }
+    };
+
+    // Visitor Chart
+    charts.visitor = new Chart(document.getElementById('visitorChart'), {
+      type: 'line',
+      data: { labels: [], datasets: [{ label: 'Pengunjung', data: [], borderColor: COLORS.primary, backgroundColor: 'rgba(37,99,235,0.1)', fill: true, tension: 0.35, pointRadius: 4, pointHoverRadius: 6 }] },
+      options: commonOpt,
+      plugins: [dataLabelsPlugin]
+    });
+
+    // Wait Chart - 2 Lines
+    charts.wait = new Chart(document.getElementById('waitChart'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          { label: 'Selesai Menunggu', data: [], borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.1)', borderWidth: 2, tension: 0.35, pointRadius: 4, pointHoverRadius: 6 },
+          { label: 'Sedang Menunggu', data: [], borderColor: '#dc2626', backgroundColor: 'rgba(239,68,68,0.1)', borderWidth: 2, borderDash: [5, 5], tension: 0.1, pointRadius: 4, pointHoverRadius: 6, pointStyle: 'rectRot' }
+        ]
+      },
+      options: commonOpt,
+      plugins: [dataLabelsPlugin]
+    });
+
+    // Service Chart
+    charts.service = new Chart(document.getElementById('serviceChart'), {
+      type: 'line',
+      data: { labels: [], datasets: [{ label: 'Lama Pelayanan', data: [], borderColor: COLORS.purple, backgroundColor: 'rgba(139,92,246,0.1)', fill: true, tension: 0.35, pointRadius: 4, pointHoverRadius: 6 }] },
+      options: commonOpt,
+      plugins: [dataLabelsPlugin]
+    });
+  }
+
+  /* ---------- DESK STATUS REALTIME ---------- */
+  async function fetchDeskStatus() {
+    if (currentView !== 'realtime') return;
+    
+    try {
+      let url = VIEW_CONFIG.realtime.api.desks;
+      if (currentSatker) {
+        url += '?satker=' + encodeURIComponent(currentSatker);
+      }
+      
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch desk status');
+      
+      const data = await res.json();
+      renderDeskTable(data.desks);
+      
+    } catch (error) {
+      console.error('Desk status fetch error:', error);
+    }
+  }
+
+  function renderDeskTable(desks) {
+    const tbody = document.getElementById('desk-performance-table');
+    const emptyState = document.getElementById('desk-empty-state');
+    const counterEl = document.getElementById('desk-counter');
+    
+    if (!desks || desks.length === 0) {
+      tbody.innerHTML = '';
+      emptyState.classList.remove('hidden');
+      if (counterEl) counterEl.innerHTML = '<span class="text-slate-400">Tidak ada meja</span>';
+      return;
+    }
+    
+    emptyState.classList.add('hidden');
+    
+    // Sort: Online -> Active -> Served count
+    const sortedDesks = [...desks].sort((a, b) => {
+      if (a.is_online !== b.is_online) return b.is_online - a.is_online;
+      if (a.is_active_db !== b.is_active_db) return b.is_active_db - a.is_active_db;
+      return (b.served_count || 0) - (a.served_count || 0);
+    });
+    
+    // Update counter
+    const totalCount = desks.length;
+    const activeCount = desks.filter(d => d.is_active_db).length;
+    const onlineCount = desks.filter(d => d.is_online).length;
+    
+    if (counterEl) {
+      counterEl.innerHTML = `
+        <span class="text-slate-500 text-xs">Total:</span> <span class="font-semibold text-slate-700 mr-2">${totalCount}</span>
+        <span class="text-blue-500 text-xs">Aktif:</span> <span class="font-semibold text-blue-600 mr-2">${activeCount}</span>
+        <span class="text-green-500 text-xs">Online:</span> <span class="font-semibold text-green-600">${onlineCount}</span>
+      `;
+    }
+    
+    const maxServed = Math.max(...desks.map(d => d.served_count || 0), 1);
+    let html = '';
+    
+    sortedDesks.forEach((desk, index) => {
+      const isActive = desk.is_active_db;
+      const isOnline = desk.is_online;
+      const servedCount = desk.served_count || 0;
+      const progressPercent = Math.min(100, (servedCount / maxServed) * 100);
+      
+      let statusConfig, rowClass = '';
+      
+      if (!isActive) {
+        rowClass = 'opacity-60 bg-slate-50';
+        statusConfig = { bg: 'bg-slate-200', text: 'text-slate-500', border: 'border-slate-300', dot: 'bg-slate-400', label: 'Nonaktif', pulse: '' };
+      } else if (isOnline) {
+        statusConfig = { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200', dot: 'bg-green-500', label: 'Online', pulse: 'animate-pulse' };
+      } else {
+        statusConfig = { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200', dot: 'bg-red-500', label: 'Waiting', pulse: '' };
+      }
+      
+      html += `
+        <tr class="hover:bg-slate-50 transition border-b border-slate-100 ${rowClass}">
+          <td class="py-3 px-4 text-sm text-slate-400 text-center font-medium">${index + 1}</td>
+          <td class="py-3 px-4">
+            <div class="flex items-center gap-2">
+              <div class="font-semibold text-slate-800 text-sm ${!isActive ? 'line-through decoration-slate-400' : ''}">${desk.desk_name}</div>
+              ${!isActive ? '<span class="text-[10px] bg-slate-200 text-slate-600 px-1.5 rounded">NONAKTIF</span>' : ''}
+            </div>
+            <div class="text-[10px] text-slate-400 mt-0.5">${desk.lokasi || '-'} • ID: ${desk.desk_id}</div>
+          </td>
+          <td class="py-3 px-4 text-center">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border}">
+              <span class="w-1.5 h-1.5 ${statusConfig.dot} rounded-full ${statusConfig.pulse}"></span>
+              ${statusConfig.label}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-right">
+            <div class="flex items-center justify-end gap-3">
+              <div class="text-right">
+                <span class="text-lg font-bold ${isActive ? 'text-slate-800' : 'text-slate-400'} tabular-nums">${servedCount}</span>
+                <span class="text-xs ${isActive ? 'text-slate-400' : 'text-slate-300'} ml-1">tiket</span>
+              </div>
+              ${isActive ? `
+                <div class="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden hidden sm:block">
+                  <div class="h-full ${isOnline ? 'bg-blue-500' : 'bg-slate-400'} rounded-full transition-all duration-500" style="width: ${progressPercent}%"></div>
+                </div>
+              ` : ''}
+            </div>
+          </td>
+        </tr>
+      `;
+    });
+    
+    tbody.innerHTML = html;
+  }
+
+  /* ---------- DOM READY ---------- */
+  document.addEventListener('DOMContentLoaded', () => {
+    const satkerSelect = document.getElementById('satker-selector');
+    if (satkerSelect && satkerSelect.tagName === 'SELECT') {
+      currentSatker = satkerSelect.value || '{{ selected_satker }}';
+    } else if (satkerSelect) {
+      currentSatker = satkerSelect.value;
+    }
+    
+    initCharts();
+    updateAll();
+    
+    if (currentView === 'realtime') {
+      refreshInterval = setInterval(updateAll, VIEW_CONFIG.realtime.refreshInterval);
+      deskStatusInterval = setInterval(fetchDeskStatus, VIEW_CONFIG.realtime.deskRefreshInterval);
+      fetchDeskStatus(); // Panggil langsung
+    }
+    
+    updateClock();
+    setInterval(updateClock, 1000);
+  });
+
+  function updateClock() {
+    document.getElementById('current-time').textContent = new Date().toLocaleTimeString('id-ID', {timeZone:'Asia/Makassar'});
+  }
+
+  async function updateAll() {
+    if (isRefreshing) return;
+    isRefreshing = true;
+    
+    const indicator = document.getElementById('refresh-indicator');
+    indicator.classList.remove('bg-green-500');
+    indicator.classList.add('bg-yellow-500');
+    
+    try {
+      await Promise.all([updateSummary(), updateCharts()]);
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      isRefreshing = false;
+      indicator.classList.remove('bg-yellow-500');
+      indicator.classList.add('bg-green-500');
+    }
+  }
+
+  async function updateSummary() {
+    const config = VIEW_CONFIG[currentView];
+    try {
+      let url = config.api.summary;
+      if (currentSatker) url += (url.includes('?') ? '&' : '?') + 'satker=' + encodeURIComponent(currentSatker);
+      
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      
+      const d = await res.json();
+      document.getElementById('total-today').textContent = d.total_today || 0;
+      document.getElementById('waiting-count').textContent = d.waiting_count || 0;
+      document.getElementById('serving-now').textContent = d.serving_now || 0;
+      document.getElementById('done-count').textContent = d.done_count || 0;
+      document.getElementById('avg-wait').textContent = d.avg_wait_minutes || 0;
+      document.getElementById('avg-service').textContent = d.avg_service_minutes || 0;
+      
+    } catch (error) {
+      console.error('Error fetching summary:', error);
+    }
+  }
+
+  async function updateCharts() {
+    const config = VIEW_CONFIG[currentView];
+    try {
+      let url = config.api.charts;
+      if (currentSatker) url += (url.includes('?') ? '&' : '?') + 'satker=' + encodeURIComponent(currentSatker);
+      
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      
+      const d = await res.json();
+      
+      charts.visitor.data.labels = d.labels;
+      charts.visitor.data.datasets[0].data = d.visitor_count || [];
+      
+      charts.wait.data.labels = d.labels;
+      charts.wait.data.datasets[0].data = d.wait_duration || [];
+      charts.wait.data.datasets[1].data = d.wait_current || [];
+      
+      charts.service.data.labels = d.labels;
+      charts.service.data.datasets[0].data = d.service_duration || [];
+      
+      Object.values(charts).forEach(chart => chart.update());
+      
+    } catch (error) {
+      console.error('Error fetching charts:', error);
+    }
+  }
+
+  window.addEventListener('beforeunload', () => {
+    if (refreshInterval) clearInterval(refreshInterval);
+    if (deskStatusInterval) clearInterval(deskStatusInterval);
+  });
+</script>
+{% endblock %}

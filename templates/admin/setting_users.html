@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="w-7/9 mx-auto">
+
+  <!-- ================= HEADER ================= -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800">
+        Manajemen User
+        {% if current_satker %}
+        <span class="text-lg font-normal text-slate-500">
+          - {{ current_satker.nama }}
+        </span>
+        {% endif %}
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Total User:
+        <span class="font-semibold text-slate-700">{{ users|length }}</span>
+      </p>
+    </div>
+
+    <!-- ================= TOOLBAR ================= -->
+    <div class="mt-4 md:mt-0 flex items-center gap-3 flex-wrap">
+
+      <!-- SATKER SELECTOR -->
+      {% if g.user.role.name == 'superadmin' %}
+      <form method="GET">
+        <select name="satker"
+                onchange="this.form.submit()"
+                class="bg-white border border-slate-300 text-slate-700 text-sm rounded-lg
+                       focus:ring-blue-500 focus:border-blue-500 w-64 p-2">
+          <option value="">Pilih Satker...</option>
+          {% for s in satker_list %}
+          <option value="{{ s.kode_satker }}"
+                  {{ 'selected' if s.kode_satker == selected_satker else '' }}>
+            {{ s.kode_satker }} - {{ s.nama }}
+          </option>
+          {% endfor %}
+        </select>
+      </form>
+      {% else %}
+      <span class="text-sm text-slate-600 bg-slate-100 px-3 py-2 rounded-lg">
+        {{ current_satker.nama }}
+      </span>
+      {% endif %}
+
+      <!-- ADD USER -->
+      <a href="{{ url_for('admin.user_form') }}"
+         class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg
+                text-sm flex items-center gap-2 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 4v16m8-8H4" />
+        </svg>
+        Tambah User
+      </a>
+    </div>
+  </div>
+
+  <!-- ================= FLASH MESSAGE ================= -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="mb-6 space-y-2">
+      {% for category, message in messages %}
+      <div class="px-4 py-3 rounded-lg border text-sm
+        {{ 'bg-red-100 border-red-200 text-red-700' if category == 'danger'
+           else 'bg-green-100 border-green-200 text-green-700' if category == 'success'
+           else 'bg-blue-100 border-blue-200 text-blue-700' }}">
+        {{ message }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endwith %}
+
+  <!-- ================= TABLE ================= -->
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left text-slate-600">
+        <thead class="text-xs text-slate-700 uppercase bg-slate-100">
+          <tr>
+            <th class="px-4 py-3">Username</th>
+            <th class="px-4 py-3">Role</th>
+            {% if g.user.role.name == 'superadmin' %}
+            <th class="px-4 py-3">Satker</th>
+            {% endif %}
+            <th class="px-4 py-3">Last Login</th>
+            <th class="px-4 py-3 text-center">Aksi</th>
+          </tr>
+        </thead>
+
+        <tbody class="divide-y divide-slate-100">
+          {% for u in users %}
+          <tr class="hover:bg-slate-50 transition-colors">
+            <td class="px-4 py-3 font-medium text-slate-800">
+              {{ u.username }}
+            </td>
+
+            <td class="px-4 py-3">
+              <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full
+                           text-xs font-medium
+                {{ 'bg-purple-100 text-purple-800' if u.role.name == 'superadmin'
+                   else 'bg-red-100 text-red-800' if u.role.name == 'ADMIN'
+                   else 'bg-blue-100 text-blue-800' }}">
+                {{ u.role.name }}
+              </span>
+            </td>
+
+            {% if g.user.role.name == 'superadmin' %}
+            <td class="px-4 py-3 text-xs">
+              {{ u.satker.kode_satker if u.satker else '-' }} –
+              {{ u.satker.nama if u.satker else 'Unknown' }}
+            </td>
+            {% endif %}
+
+            <td class="px-4 py-3 text-xs text-slate-500">
+              {{ to_local(u.last_login).strftime('%d/%m/%Y %H:%M:%S') if u.last_login else 'Belum login' }}
+            </td>
+
+            <td class="px-4 py-3 text-center">
+              <div class="flex justify-center gap-2">
+
+                <!-- EDIT -->
+                <a href="{{ url_for('admin.user_form', user_id=u.id) }}"
+                   class="p-2 rounded-lg text-amber-600 hover:bg-amber-50"
+                   title="Edit">
+                  ✏️
+                </a>
+
+                <!-- DELETE (+CSRF) -->
+                {% if u.id != current_user_id %}
+                <form method="POST"
+                      action="{{ url_for('admin.user_delete', user_id=u.id) }}"
+                      onsubmit="return confirm('Yakin hapus user {{ u.username }}?')"
+                      class="inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit"
+                          class="p-2 rounded-lg text-red-600 hover:bg-red-50"
+                          title="Hapus">
+                    🗑️
+                  </button>
+                </form>
+                {% else %}
+                <span class="text-xs text-slate-400 italic">(Anda)</span>
+                {% endif %}
+
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <!-- ================= EMPTY STATE ================= -->
+          <tr>
+            <td colspan="{{ 5 if g.user.role.name == 'superadmin' else 4 }}"
+                class="py-14 text-center text-slate-500">
+              <svg class="w-16 h-16 mx-auto text-slate-300 mb-4"
+                   fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 4a4 4 0 110 8 4 4 0 010-8zm6 16H6v-1a6 6 0 0112 0v1z"/>
+              </svg>
+              <p class="font-medium">Belum ada user</p>
+              <p class="text-sm text-slate-400 mt-1">
+                Silakan tambahkan user baru
+              </p>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

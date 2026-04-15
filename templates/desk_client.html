@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="id">    
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Desk Client - {{ desk_name or 'Pilih Meja' }}</title>
+    
+    <meta name="csrf-token" content="{{ csrf_token() if csrf_token else '' }}">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --btn-height: 80px;
+            --btn-gap: 8px;
+            --header-height: 40px;
+            --display-height: 90px;
+            --queue-header-height: 36px;
+        }
+        
+        html, body {
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #1a1a2e;
+            color: white;
+        }
+        
+        .app-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .queue-scroll::-webkit-scrollbar { width: 4px; }
+        .queue-scroll::-webkit-scrollbar-track { background: #16213e; }
+        .queue-scroll::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 2px; }
+        
+        .btn-press:active { transform: scale(0.98); }
+        
+        @keyframes pulse-border {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.4); }
+            50% { box-shadow: 0 0 0 6px rgba(255,255,255,0); }
+        }
+        .pulse-active { animation: pulse-border 2s infinite; }
+        
+        .current-ticket {
+            font-size: 2.5rem;
+            font-weight: 900;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            line-height: 1;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.online { background: #22c55e; }
+        .status-dot.offline { background: #ef4444; }
+        .status-dot.connecting { background: #eab308; animation: pulse 1s infinite; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .control-btn {
+            width: 100%;
+            height: var(--btn-height);
+            flex-shrink: 0;
+        }
+        
+        .toast {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            z-index: 100;
+            animation: slideDown 0.3s ease;
+        }
+        
+        @keyframes slideDown {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        /* Loading spinner overlay - tidak menghilangkan child elements */
+        .btn-loading-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: inherit;
+            border-radius: inherit;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <!-- Connection Status Bar -->
+        <div id="connectionStatus" class="h-1 bg-gray-800 z-50 shrink-0">
+            <div id="connectionBar" class="h-full bg-yellow-500 transition-all duration-300" style="width: 0%"></div>
+        </div>
+
+        <!-- HEADER -->
+        <div class="bg-gray-900 px-3 border-b border-gray-700 flex justify-between items-center shrink-0" 
+             style="height: var(--header-height);">
+            <div class="flex items-center gap-2 overflow-hidden">
+                <span class="status-dot connecting" id="statusDot"></span>
+                <span class="text-xs font-semibold truncate" id="deskName">
+                    {{ desk_name or 'Pilih Meja' }} - {{ desk_user }}
+                </span>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="text-[10px] text-gray-400" id="clock">--:--</div>
+                <button onclick="handleLogoff()" 
+                        class="text-[10px] bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded transition-colors flex items-center gap-1" 
+                        title="Keluar dari Meja">
+                    <i class="fas fa-power-off"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- CURRENT SERVING DISPLAY -->
+        <div class="bg-gradient-to-b from-gray-800 to-gray-900 px-3 text-center border-b border-gray-700 shrink-0 flex flex-col justify-center"
+             style="height: var(--display-height);">
+            <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Sedang Melayani</div>
+            <div class="current-ticket text-yellow-400" id="currentTicket">---</div>
+            <div class="text-xs text-gray-300 mt-1 truncate px-2" id="serviceType">-</div>
+        </div>
+
+        <!-- CONTROL BUTTONS -->
+        <div class="p-2 bg-gray-900 border-b border-gray-700 shrink-0 flex flex-col" 
+             style="gap: var(--btn-gap);">
+            
+            <!-- NEXT -->
+            <button onclick="handleNext()" id="btnNext"
+                    class="control-btn btn-press bg-gradient-to-b from-green-500 to-green-700 hover:from-green-400 hover:to-green-600 rounded-lg flex flex-col items-center justify-center shadow-lg border border-green-400/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed relative">
+                <i class="fas fa-arrow-right text-lg mb-0.5"></i>
+                <span class="font-bold text-sm">NEXT</span>
+                <span class="text-[10px] opacity-75">Antrian Berikutnya</span>
+            </button>
+
+            <!-- SKIP -->
+            <button onclick="handleSkip()" id="btnSkip"
+                    class="control-btn btn-press bg-gradient-to-b from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 rounded-lg flex flex-col items-center justify-center shadow-lg border border-red-400/30 transition-all disabled:opacity-50 relative">
+                <i class="fas fa-forward text-lg mb-0.5"></i>
+                <span class="font-bold text-sm">SKIP</span>
+                <span class="text-[10px] opacity-75">Lewati Tiket</span>
+            </button>
+
+            <!-- TOGGLE PAUSE/RESUME -->
+            <button onclick="handleTogglePause()" id="btnToggle"
+                    class="control-btn btn-press bg-gradient-to-b from-blue-500 to-blue-700 hover:from-blue-400 hover:to-blue-600 rounded-lg flex flex-col items-center justify-center shadow-lg border border-blue-400/30 transition-all relative">
+                <i class="fas fa-pause text-lg mb-0.5" id="iconToggle"></i>
+                <span class="font-bold text-sm" id="textToggle">PAUSE</span>
+                <span class="text-[10px] opacity-75" id="subToggle">Jeda Layanan</span>
+            </button>
+        </div>
+
+        <!-- QUEUE LIST -->
+        <div class="flex-1 bg-gray-900 flex flex-col min-h-0">
+            <div class="bg-gray-800 px-3 flex justify-between items-center border-b border-gray-700 shrink-0"
+                 style="height: var(--queue-header-height);">
+                <span class="text-xs font-semibold text-gray-300">
+                    <i class="fas fa-list-ol mr-1"></i> MENUNGGU
+                </span>
+                <span class="text-xs bg-gray-700 px-2 py-0.5 rounded-full" id="queueCount">0</span>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto queue-scroll p-2" id="queueList">
+                <div class="text-center text-gray-500 py-8 text-xs" id="emptyQueue">
+                    <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                    Memuat antrian...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL SKIP REASON -->
+    <div id="skipModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+        <div class="bg-gray-800 rounded-lg p-4 w-full max-w-[280px]">
+            <h3 class="font-bold text-sm mb-3">Alasan Skip</h3>
+            <textarea id="skipReason" rows="3" class="w-full bg-gray-700 rounded p-2 text-xs mb-3 resize-none text-white" placeholder="Masukkan alasan..."></textarea>
+            <div class="flex gap-2">
+                <button onclick="closeSkipModal()" class="flex-1 bg-gray-600 hover:bg-gray-500 py-2 rounded text-xs">Batal</button>
+                <button onclick="confirmSkip()" class="flex-1 bg-red-600 hover:bg-red-500 py-2 rounded text-xs font-bold">Skip</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SETUP MODAL -->
+    <div id="setupModal" class="fixed inset-0 bg-gray-900 z-50 flex flex-col" style="display: {{ 'none' if desk_id else 'flex' }}">
+        <div class="p-4 border-b border-gray-700 bg-gray-800 shrink-0">
+            <h2 class="font-bold text-lg text-center">Pilih Meja Layanan</h2>
+            <p class="text-[10px] text-center text-gray-400 mt-1">Pilih meja untuk memulai layanan</p>
+        </div>
+        <div class="flex-1 overflow-y-auto p-2" id="deskList">
+            <div class="text-center text-gray-500 py-8 text-xs">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2 block"></i>
+                Memuat daftar meja...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CONFIG = {
+            apiBase: '/api',
+            refreshInterval: 3000,
+            connectionTimeout: 10000
+        };
+
+        let state = {
+            deskId: {{ desk_id | tojson }},
+            deskName: {{ desk_name | tojson }},
+            isPaused: {{ session.get('desk_paused', false) | tojson }},
+            currentTicket: null,
+            queue: [],
+            isProcessing: false,
+            isOnline: false,
+            lastPing: null
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            updateClock();
+            setInterval(updateClock, 1000);
+            
+            if (!state.deskId) {
+                loadDesks();
+            } else {
+                initDesk();
+            }
+            
+            setInterval(checkConnection, 5000);
+        });
+
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').textContent = 
+                now.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'});
+        }
+
+        function checkConnection() {
+            const now = Date.now();
+            const lastPing = state.lastPing || 0;
+            const diff = now - lastPing;
+            
+            const dot = document.getElementById('statusDot');
+            const bar = document.getElementById('connectionBar');
+            
+            if (diff > CONFIG.connectionTimeout || !state.isOnline) {
+                dot.className = 'status-dot offline';
+                bar.className = 'h-full bg-red-500 transition-all duration-300';
+                bar.style.width = '100%';
+            } else {
+                dot.className = 'status-dot online';
+                bar.className = 'h-full bg-green-500 transition-all duration-300';
+                bar.style.width = '100%';
+                setTimeout(() => { bar.style.width = '0%'; }, 500);
+            }
+        }
+
+        async function handleLogoff() {
+            if (!confirm('Yakin ingin keluar dari meja ini?\nTiket yang sedang dilayani akan diselesaikan.')) return;
+            
+            try {
+                const data = await apiCall('/api/desk/release', { method: 'POST' });
+                if (data.success) {
+                    showToast('Berhasil keluar dari meja', 'success');
+                    setTimeout(() => window.location.reload(), 1000);
+                }
+            } catch (err) {
+                showToast('Gagal keluar: ' + err.message, 'error');
+            }
+        }
+
+        async function apiCall(url, options = {}) {
+            const defaultOptions = {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': getCsrfToken(),
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            };
+            
+            try {
+                const response = await fetch(url, { ...defaultOptions, ...options });
+                state.lastPing = Date.now();
+                state.isOnline = true;
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || `HTTP ${response.status}`);
+                }
+                
+                return await response.json();
+            } catch (error) {
+                state.isOnline = false;
+                throw error;
+            }
+        }
+
+        function getCsrfToken() {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            if (meta && meta.content) return meta.content;
+            const match = document.cookie.match(/csrf_token=([^;]+)/);
+            return match ? match[1] : '';
+        }
+
+        async function loadDesks() {
+            try {
+                const desks = await apiCall('/api/desks');
+                renderDeskList(desks);
+            } catch (err) {
+                showToast('Gagal memuat daftar meja: ' + err.message, 'error');
+                setTimeout(loadDesks, 3000);
+            }
+        }
+
+        function renderDeskList(desks) {
+            const container = document.getElementById('deskList');
+            if (!Array.isArray(desks) || desks.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-red-400 py-8 text-xs">
+                        <i class="fas fa-exclamation-circle text-2xl mb-2 block"></i>
+                        Tidak ada meja tersedia
+                    </div>`;
+                return;
+            }
+            
+            container.innerHTML = desks.map(d => `
+                <button onclick="selectDesk(${d.id}, '${d.name.replace(/'/g, "\\'")}')" 
+                        class="w-full mb-2 p-3 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg text-left transition-colors ${d.is_occupied ? 'opacity-50 cursor-not-allowed' : ''}"
+                        ${d.is_occupied ? 'disabled' : ''}>
+                    <div class="font-bold text-sm flex justify-between">
+                        <span>${d.name}</span>
+                        ${d.is_dedicated ? '<span class="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 rounded">DEDICATED</span>' : ''}
+                    </div>
+                    <div class="text-[10px] text-gray-400 mt-1">
+                        ${d.is_dedicated && Array.isArray(d.services) 
+                            ? 'Layanan: ' + d.services.map(s => s.prefix).join(', ') 
+                            : '🌐 Semua Layanan'}
+                    </div>
+                    ${d.is_occupied ? '<div class="text-[10px] text-red-400 mt-1"><i class="fas fa-lock"></i> Sedang digunakan</div>' : ''}
+                </button>
+            `).join('');
+        }
+
+        async function selectDesk(deskId, deskName) {
+            try {
+                const data = await apiCall('/api/desk/assign', {
+                    method: 'POST',
+                    body: JSON.stringify({ desk_id: deskId })
+                });
+                
+                if (data.success) {
+                    state.deskId = data.desk_id;
+                    state.deskName = data.desk_name;
+                    document.getElementById('deskName').textContent = data.desk_name;
+                    document.getElementById('setupModal').style.display = 'none';
+                    initDesk();
+                    showToast('Meja berhasil dipilih', 'success');
+                } else {
+                    throw new Error(data.error || 'Gagal memilih meja');
+                }
+            } catch (err) {
+                showToast(err.message, 'error');
+                loadDesks();
+            }
+        }
+
+        function initDesk() {
+            updateToggleButton();
+            loadQueue();
+            startPolling();
+            startHeartbeat();  // <-- TAMBAH INI
+            showToast('Terhubung ke ' + state.deskName, 'success');
+        }
+
+        // KIRIM HEARTBEAT TIAP 10 DETIK
+        function startHeartbeat() {
+            setInterval(async () => {
+                if (!state.deskId) return;
+                
+                try {
+                    const response = await fetch('/api/desk/heartbeat', {  // <-- Sesuai route
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-Token': getCsrfToken()
+                        },
+                        body: JSON.stringify({ desk_id: state.deskId })
+                    });
+                    
+                    if (response.ok) {
+                        state.lastPing = Date.now();
+                        state.isOnline = true;
+                    }
+                } catch (err) {
+                    console.error('Heartbeat failed');
+                    state.isOnline = false;
+                }
+            }, 10000); // 10 detik
+        }
+
+        function startPolling() {
+            setInterval(loadQueue, CONFIG.refreshInterval);
+        }
+
+        async function handleNext() {
+            if (state.isProcessing || state.isPaused || !state.deskId) return;
+            state.isProcessing = true;
+            setLoading('btnNext', true);
+            
+            try {
+                const data = await apiCall(`/api/desk/next/${state.deskId}`, { method: 'POST' });
+                
+                if (data.now_serving) {
+                    updateCurrentTicket(data.now_serving);
+                    playAudio(data.now_serving.number);
+                    showToast('Memanggil: ' + data.now_serving.number, 'success');
+                } else {
+                    clearCurrentTicket();
+                    showToast(data.message || 'Tidak ada antrian', 'info');
+                }
+                loadQueue();
+            } catch (err) {
+                showToast(err.message, 'error');
+            } finally {
+                setLoading('btnNext', false);
+                state.isProcessing = false;
+            }
+        }
+
+        async function handleRecall() {
+            // Hanya cek deskId dan paused, jangan cek state.currentTicket
+            if (!state.deskId) {
+                showToast('Meja belum dipilih', 'error');
+                return;
+            }
+            
+            if (state.isPaused) {
+                showToast('Meja sedang dijeda', 'warning');
+                return;
+            }
+            
+            setLoading('btnRecall', true);
+            
+            try {
+                // Panggil backend - biarkan backend yang validasi ada/tidaknya tiket
+                const data = await apiCall(`/api/desk/recall/${state.deskId}`, { 
+                    method: 'POST'
+                });
+                
+                if (data.success) {
+                    // Update state dengan data dari backend
+                    state.currentTicket = { 
+                        number: data.ticket,
+                        service_type: state.currentTicket?.service_type || '-'
+                    };
+                    document.getElementById('currentTicket').textContent = data.ticket;
+                    
+                    // Trigger audio
+                    playAudio(data.ticket);
+                    showToast('Panggil ulang: ' + data.ticket, 'success');
+                }
+            } catch (err) {
+                // Handle specific error: tidak ada tiket
+                if (err.message.includes('404') || err.message.toLowerCase().includes('no serving')) {
+                    showToast('Tidak ada tiket aktif saat ini', 'warning');
+                    clearCurrentTicket();
+                } else {
+                    showToast('Gagal recall: ' + err.message, 'error');
+                }
+            } finally {
+                setLoading('btnRecall', false);
+            }
+        }
+
+        function handleSkip() {
+            if (!state.currentTicket || state.isPaused || !state.deskId) return;
+            document.getElementById('skipModal').classList.remove('hidden');
+            document.getElementById('skipReason').focus();
+        }
+
+        function closeSkipModal() {
+            document.getElementById('skipModal').classList.add('hidden');
+            document.getElementById('skipReason').value = '';
+        }
+
+        async function confirmSkip() {
+            const reason = document.getElementById('skipReason').value || 'Tidak ada alasan';
+            closeSkipModal();
+            
+            setLoading('btnSkip', true);
+            try {
+                const data = await apiCall(`/api/desk/skip/${state.deskId}`, {
+                    method: 'POST',
+                    body: JSON.stringify({ reason: reason })
+                });
+                
+                if (data.now_serving) {
+                    updateCurrentTicket(data.now_serving);
+                    playAudio(data.now_serving.number);
+                    showToast('Skip & Next: ' + data.now_serving.number, 'success');
+                } else {
+                    clearCurrentTicket();
+                    showToast('Tiket dilewati', 'warning');
+                }
+                loadQueue();
+            } catch (err) {
+                showToast(err.message, 'error');
+            } finally {
+                setLoading('btnSkip', false);
+            }
+        }
+
+        // ==========================================
+        // FIXED: Pause Button Handler
+        // ==========================================
+        async function handleTogglePause() {
+            if (!state.deskId) return;
+            setLoading('btnToggle', true);
+            
+            const newPausedState = !state.isPaused;
+            let updateSuccess = false;
+            
+            try {
+                const data = await apiCall(`/api/desk/status/${state.deskId}`, {
+                    method: 'POST',
+                    body: JSON.stringify({ paused: newPausedState })
+                });
+                
+                if (data.success) {
+                    state.isPaused = newPausedState;
+                    updateSuccess = true;
+                    showToast(state.isPaused ? 'Layanan dijeda' : 'Layanan aktif', 'info');
+                }
+            } catch (err) {
+                showToast(err.message, 'error');
+            } finally {
+                // Penting: Restore HTML dulu sebelum updateToggleButton!
+                setLoading('btnToggle', false);
+                // Update UI setelah HTML restored
+                if (updateSuccess) {
+                    updateToggleButton();
+                }
+            }
+        }
+
+        // ==========================================
+        // FIXED: Safe Update Toggle Button
+        // ==========================================
+        function updateToggleButton() {
+            const btn = document.getElementById('btnToggle');
+            const icon = document.getElementById('iconToggle');
+            const text = document.getElementById('textToggle');
+            const sub = document.getElementById('subToggle');
+            
+            if (!btn || !icon || !text || !sub) return;
+            
+            if (state.isPaused) {
+                // Mode Pause (hijau)
+                btn.className = 'control-btn btn-press bg-gradient-to-b from-green-500 to-green-700 hover:from-green-400 hover:to-green-600 rounded-lg flex flex-col items-center justify-center shadow-lg border border-green-400/30 transition-all relative pulse-active';
+                icon.className = 'fas fa-play text-lg mb-0.5';
+                text.textContent = 'RESUME';
+                sub.textContent = 'Lanjutkan Layanan';
+                
+                // Pause: disable SEMUA tombol kontrol termasuk Recall
+                ['btnNext', 'btnRecall', 'btnSkip'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.disabled = true;
+                        el.classList.add('opacity-50');
+                    }
+                });
+            } else {
+                // Mode Active (biru)
+                btn.className = 'control-btn btn-press bg-gradient-to-b from-blue-500 to-blue-700 hover:from-blue-400 hover:to-blue-600 rounded-lg flex flex-col items-center justify-center shadow-lg border border-blue-400/30 transition-all relative';
+                icon.className = 'fas fa-pause text-lg mb-0.5';
+                text.textContent = 'PAUSE';
+                sub.textContent = 'Jeda Layanan';
+                
+                // Enable Next dan Skip
+                ['btnNext', 'btnSkip'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.disabled = false;
+                        el.classList.remove('opacity-50');
+                    }
+                });
+                
+                // PERBAIKAN PENTING: Recall SELALU enable (tidak pernah disable)
+                // Agar bisa dipencet berulang kali
+                const btnRecall = document.getElementById('btnRecall');
+                if (btnRecall) {
+                    btnRecall.disabled = false;
+                    btnRecall.classList.remove('opacity-50');
+                }
+            }
+        }
+
+        function updateCurrentTicket(ticket) {
+            state.currentTicket = ticket;
+            document.getElementById('currentTicket').textContent = ticket.number;
+            document.getElementById('serviceType').textContent = ticket.service_type || '-';
+            updateToggleButton();
+        }
+
+        function clearCurrentTicket() {
+            state.currentTicket = null;
+            document.getElementById('currentTicket').textContent = '---';
+            document.getElementById('serviceType').textContent = '-';
+            updateToggleButton();
+        }
+
+        // ==========================================
+        // FIXED: Loading State dengan Overlay (tidak destroy DOM)
+        // ==========================================
+        function setLoading(btnId, loading) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            
+            if (loading) {
+                btn.disabled = true;
+                // Tambahkan overlay spinner instead of replacing innerHTML
+                const overlay = document.createElement('div');
+                overlay.className = 'btn-loading-overlay';
+                overlay.id = `loading-${btnId}`;
+                overlay.innerHTML = '<i class="fas fa-spinner fa-spin text-xl"></i>';
+                btn.appendChild(overlay);
+                btn.style.position = 'relative';
+            } else {
+                btn.disabled = false;
+                // Hapus overlay
+                const overlay = document.getElementById(`loading-${btnId}`);
+                if (overlay) overlay.remove();
+            }
+        }
+
+        async function loadQueue() {
+            if (!state.deskId) return;
+            
+            try {
+                const data = await apiCall('/api/queue?status=waiting');
+                state.queue = data.tickets || [];
+                renderQueue();
+            } catch (err) {
+                console.error('Failed to load queue:', err);
+            }
+        }
+
+        function renderQueue() {
+            const container = document.getElementById('queueList');
+            const count = document.getElementById('queueCount');
+            
+            count.textContent = state.queue.length;
+            
+            if (state.queue.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-gray-500 py-8 text-xs">
+                        <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                        Tidak ada antrian menunggu
+                    </div>`;
+                return;
+            }
+            
+            container.innerHTML = state.queue.map((ticket, index) => `
+                <div class="flex items-center justify-between p-2 mb-1.5 rounded ${index === 0 ? 'bg-yellow-500/20 border border-yellow-500/50' : 'bg-gray-800'}">
+                    <div class="flex items-center gap-2 overflow-hidden">
+                        <span class="text-xs font-mono text-gray-400 w-5 shrink-0">${index + 1}</span>
+                        <div class="min-w-0">
+                            <div class="font-bold text-sm ${index === 0 ? 'text-yellow-400' : 'text-white'} truncate">${ticket.number}</div>
+                            <div class="text-[10px] text-gray-400 truncate">${ticket.service_name || '-'}</div>
+                        </div>
+                    </div>
+                    ${ticket.priority > 0 ? '<span class="text-[10px] bg-red-500/20 text-red-400 px-1.5 rounded shrink-0 ml-1">VIP</span>' : ''}
+                </div>
+            `).join('');
+        }
+
+        function playAudio(ticketNumber) {
+            apiCall('/api/replay-request', {
+                method: 'POST',
+                body: JSON.stringify({
+                    ticket: ticketNumber,
+                    desk_id: state.deskId
+                })
+            }).catch(err => console.error('Audio request failed:', err));
+        }
+
+        function showToast(message, type = 'info') {
+            const colors = {
+                success: 'bg-green-500 text-white',
+                error: 'bg-red-500 text-white',
+                warning: 'bg-yellow-500 text-black',
+                info: 'bg-blue-500 text-white'
+            };
+            
+            const existing = document.querySelector('.toast');
+            if (existing) existing.remove();
+            
+            const toast = document.createElement('div');
+            toast.className = `toast ${colors[type] || colors.info}`;
+            toast.innerHTML = `<i class="fas ${type === 'success' ? 'fa-check' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'} mr-1"></i> ${message}`;
+            
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (document.getElementById('skipModal').classList.contains('hidden') === false) {
+                if (e.key === 'Escape') closeSkipModal();
+                if (e.key === 'Enter') confirmSkip();
+                return;
+            }
+            
+            switch(e.key) {
+                case ' ':
+                    e.preventDefault();
+                    handleNext();
+                    break;
+                case 'r':
+                case 'R':
+                    handleRecall();
+                    break;
+                case 's':
+                case 'S':
+                    handleSkip();
+                    break;
+                case 'p':
+                case 'P':
+                    handleTogglePause();
+                    break;
+            }
+        });
+    </script>
+</body>
+</html>

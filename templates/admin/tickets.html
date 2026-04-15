@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="w-7/9 mx-auto">
+
+  <!-- HEADER -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800">
+        Daftar Tiket
+        {% if current_satker %}
+        <span class="text-lg font-normal text-slate-500">- {{ current_satker.nama }}</span>
+        {% endif %}
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Session: {{ session_start.strftime('%d/%m/%Y %H:%M') }} WITA | 
+        <span id="last-updated">Update: {{ now_local.strftime('%H:%M:%S') }}</span>
+      </p>
+    </div>
+    
+    <div class="mt-4 md:mt-0 flex items-center gap-3 flex-wrap">
+      <!-- AUTO REFRESH INDICATOR -->
+      <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-700">
+        <span class="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" id="refresh-indicator"></span>
+        Auto Refresh
+      </span>
+      
+      <!-- SATKER SELECTOR (HANYA SUPERADMIN/SUPERCOACH) -->
+      {% if is_super %}
+      <div class="relative">
+        <select id="satker-selector" onchange="changeSatker(this.value)" 
+                class="bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-56 p-2">
+          <option value="">Pilih Satker...</option>
+          {% for satker in satker_list %}
+          <option value="{{ satker.kode_satker }}" {% if satker.kode_satker == selected_satker %}selected{% endif %}>
+            {{ satker.kode_satker }} - {{ satker.nama }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <!-- Hidden input untuk non-superadmin -->
+      <input type="hidden" id="satker-selector" value="{{ selected_satker }}">
+      <span class="text-sm text-slate-600 bg-slate-100 px-3 py-1 rounded-lg">
+        {{ g.user.satker.nama }}
+      </span>
+      {% endif %}
+      
+      <!-- FILTER STATUS -->
+      <select id="status-filter" onchange="filterTickets()" 
+              class="bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 p-2">
+        <option value="all">Semua Status</option>
+        <option value="waiting">Menunggu</option>
+        <option value="serving">Dilayani</option>
+        <option value="done">Selesai</option>
+        <option value="skipped">Dilewati</option>
+      </select>
+      
+      <!-- REFRESH MANUAL -->
+      <button onclick="refreshData()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-sm transition-colors">
+        <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+        </svg>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <!-- STATS CARDS -->
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6" id="stats-container">
+    <div class="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
+      <h3 class="text-xs font-semibold text-slate-500 uppercase">Total Tiket</h3>
+      <div class="text-2xl font-bold text-slate-800" id="stat-total">0</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4 border-l-4 border-yellow-500">
+      <h3 class="text-xs font-semibold text-slate-500 uppercase">Menunggu</h3>
+      <div class="text-2xl font-bold text-yellow-600" id="stat-waiting">0</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
+      <h3 class="text-xs font-semibold text-slate-500 uppercase">Dilayani</h3>
+      <div class="text-2xl font-bold text-green-600" id="stat-serving">0</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4 border-l-4 border-slate-500">
+      <h3 class="text-xs font-semibold text-slate-500 uppercase">Selesai</h3>
+      <div class="text-2xl font-bold text-slate-600" id="stat-done">0</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4 border-l-4 border-red-500">
+      <h3 class="text-xs font-semibold text-slate-500 uppercase">Dilewati</h3>
+      <div class="text-2xl font-bold text-red-600" id="stat-skipped">0</div>
+    </div>
+  </div>
+
+  <!-- TICKETS TABLE -->
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left text-slate-600" id="tickets-table">
+        <thead class="text-xs text-slate-700 uppercase bg-slate-100">
+          <tr>
+            <th class="px-4 py-3">No. Tiket</th>
+            <th class="px-4 py-3">Layanan</th>
+            <th class="px-4 py-3">Meja</th>
+            <th class="px-4 py-3">Status</th>
+            <th class="px-4 py-3">Waktu Tunggu</th>
+            <th class="px-4 py-3">Durasi Layanan</th>
+            <th class="px-4 py-3">Waktu Buat</th>
+            <th class="px-4 py-3 text-center">Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="tickets-tbody">
+          <!-- Data akan diisi via JavaScript -->
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- EMPTY STATE -->
+    <div id="empty-state" class="hidden text-center py-12">
+      <svg class="w-16 h-16 mx-auto text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+      </svg>
+      <p class="text-slate-500">Tidak ada tiket ditemukan</p>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL SKIP TICKET -->
+<div id="skip-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+  <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+    <h3 class="text-lg font-bold text-slate-800 mb-4">Skip Tiket</h3>
+    <p class="text-sm text-slate-600 mb-4">Anda akan melewati tiket <span id="skip-ticket-number" class="font-bold"></span></p>
+    <form id="skip-form" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-slate-700 mb-2">Alasan Skip</label>
+        <textarea name="reason" rows="3" class="w-full border border-slate-300 rounded-lg p-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Masukkan alasan..."></textarea>
+      </div>
+      <div class="flex gap-3 justify-end">
+        <button type="button" onclick="closeSkipModal()" class="px-4 py-2 text-slate-600 hover:text-slate-800">Batal</button>
+        <button type="submit" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg">Skip Tiket</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL DELETE TICKET -->
+<div id="delete-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+  <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+    <h3 class="text-lg font-bold text-red-600 mb-4">Hapus Tiket</h3>
+    <p class="text-sm text-slate-600 mb-4">Anda yakin ingin menghapus tiket <span id="delete-ticket-number" class="font-bold"></span>?</p>
+    <p class="text-xs text-red-500 mb-4">Tindakan ini tidak dapat dibatalkan.</p>
+    <form id="delete-form" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="flex gap-3 justify-end">
+        <button type="button" onclick="closeDeleteModal()" class="px-4 py-2 text-slate-600 hover:text-slate-800">Batal</button>
+        <button type="submit" class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg">Hapus</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  /* ---------- CONFIG ---------- */
+  let refreshInterval;
+  let currentSatker = '{{ selected_satker }}';
+  let currentFilter = 'all';
+  let isRefreshing = false;
+  const isAdmin = {{ 'true' if g.user.role.value == 'admin' or is_super else 'false' }};
+
+  /* ---------- DOM READY ---------- */
+  document.addEventListener('DOMContentLoaded', () => {
+    refreshData();
+    startAutoRefresh();
+  });
+
+  /* ---------- AUTO REFRESH ---------- */
+  function startAutoRefresh() {
+    refreshInterval = setInterval(() => {
+      if (!isRefreshing) {
+        refreshData();
+      }
+    }, 10000); // Refresh setiap 10 detik
+  }
+
+  function stopAutoRefresh() {
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+    }
+  }
+
+  /* ---------- CHANGE SATKER (SUPERADMIN) ---------- */
+  function changeSatker(kodeSatker) {
+    if (!kodeSatker) return;
+    currentSatker = kodeSatker;
+    refreshData();
+    // Update URL tanpa reload
+    const url = new URL(window.location);
+    url.searchParams.set('satker', kodeSatker);
+    window.history.pushState({}, '', url);
+  }
+
+  /* ---------- FILTER TICKETS ---------- */
+  function filterTickets() {
+    currentFilter = document.getElementById('status-filter').value;
+    renderTable(window.lastTicketData || []);
+  }
+
+  /* ---------- REFRESH DATA ---------- */
+  async function refreshData() {
+    if (isRefreshing) return;
+    isRefreshing = true;
+    
+    // Update indicator
+    const indicator = document.getElementById('refresh-indicator');
+    indicator.classList.remove('bg-blue-500');
+    indicator.classList.add('bg-yellow-500');
+    
+    try {
+      const url = new URL('{{ url_for("admin.tickets_list") }}', window.location.origin);
+      url.searchParams.set('satker', currentSatker);
+      url.searchParams.set('ajax', '1'); // Flag untuk request AJAX
+      
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch');
+      
+      const data = await res.json();
+      window.lastTicketData = data.tickets;
+      
+      updateStats(data.stats);
+      renderTable(data.tickets);
+      document.getElementById('last-updated').textContent = 'Update: ' + data.current_time;
+      
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      isRefreshing = false;
+      indicator.classList.remove('bg-yellow-500');
+      indicator.classList.add('bg-blue-500');
+    }
+  }
+
+  /* ---------- UPDATE STATS ---------- */
+  function updateStats(stats) {
+    document.getElementById('stat-total').textContent = stats.total || 0;
+    document.getElementById('stat-waiting').textContent = stats.waiting || 0;
+    document.getElementById('stat-serving').textContent = stats.serving || 0;
+    document.getElementById('stat-done').textContent = stats.done || 0;
+    document.getElementById('stat-skipped').textContent = stats.skipped || 0;
+  }
+
+  /* ---------- RENDER TABLE ---------- */
+  function renderTable(tickets) {
+    const tbody = document.getElementById('tickets-tbody');
+    const emptyState = document.getElementById('empty-state');
+    
+    // Filter berdasarkan status
+    let filteredTickets = tickets;
+    if (currentFilter !== 'all') {
+      filteredTickets = tickets.filter(t => t.status === currentFilter);
+    }
+    
+    if (filteredTickets.length === 0) {
+      tbody.innerHTML = '';
+      emptyState.classList.remove('hidden');
+      return;
+    }
+    
+    emptyState.classList.add('hidden');
+    
+    tbody.innerHTML = filteredTickets.map(t => {
+      const statusColors = {
+        'waiting': 'bg-yellow-100 text-yellow-800',
+        'serving': 'bg-green-100 text-green-800',
+        'done': 'bg-slate-100 text-slate-800',
+        'skipped': 'bg-red-100 text-red-800'
+      };
+      
+      const statusLabels = {
+        'waiting': 'Menunggu',
+        'serving': 'Dilayani',
+        'done': 'Selesai',
+        'skipped': 'Dilewati'
+      };
+      
+      const statusClass = statusColors[t.status] || 'bg-slate-100 text-slate-800';
+      const statusLabel = statusLabels[t.status] || t.status;
+      
+      // Aksi untuk admin: Skip dan Delete
+      let actions = '';
+      if (isAdmin) {
+        // Tombol Skip: hanya untuk tiket WAITING atau SERVING yang belum di-skip
+        const canSkip = (t.status === 'waiting' || t.status === 'serving') && !t.is_skipped;
+        // Tombol Delete: hanya untuk tiket DONE atau SKIPPED (sesuai logic backend)
+        const canDelete = t.status === 'done' || t.status === 'skipped';
+        
+        const skipBtn = canSkip ? `
+          <button onclick="openSkipModal('${t.id}', '${t.number}')" 
+                  class="text-yellow-600 hover:text-yellow-800 p-1 transition-colors" title="Skip Tiket">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>
+            </svg>
+          </button>
+        ` : `<span class="w-5 h-5 inline-block"></span>`;
+        
+        const deleteBtn = canDelete ? `
+          <button onclick="openDeleteModal('${t.id}', '${t.number}')" 
+                  class="text-red-600 hover:text-red-800 p-1 transition-colors" title="Hapus Tiket">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+            </svg>
+          </button>
+        ` : `<span class="w-5 h-5 inline-block"></span>`;
+        
+        actions = `
+          <div class="flex justify-center gap-2">
+            ${skipBtn}
+            ${deleteBtn}
+          </div>
+        `;
+      } else {
+        actions = '<span class="text-slate-400 text-xs">-</span>';
+      }
+      
+      return `
+        <tr class="border-b hover:bg-slate-50 transition-colors" data-status="${t.status}">
+          <td class="px-4 py-3 font-medium text-slate-800">${t.number}</td>
+          <td class="px-4 py-3">${t.service_name}</td>
+          <td class="px-4 py-3">${t.desk_name || '-'}</td>
+          <td class="px-4 py-3">
+            <span class="px-2 py-1 rounded-full text-xs font-medium ${statusClass}">
+              ${statusLabel}
+            </span>
+          </td>
+          <td class="px-4 py-3">${t.wait_display}</td>
+          <td class="px-4 py-3">${t.service_display}</td>
+          <td class="px-4 py-3 text-xs">${t.created_formatted}</td>
+          <td class="px-4 py-3">${actions}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  /* ---------- MODAL SKIP ---------- */
+  function openSkipModal(ticketId, ticketNumber) {
+    document.getElementById('skip-ticket-number').textContent = ticketNumber;
+    document.getElementById('skip-form').action = `/admin/tickets/skip/${ticketId}`;
+    document.getElementById('skip-modal').classList.remove('hidden');
+  }
+
+  function closeSkipModal() {
+    document.getElementById('skip-modal').classList.add('hidden');
+    document.getElementById('skip-form').reset();
+  }
+
+  /* ---------- MODAL DELETE ---------- */
+  function openDeleteModal(ticketId, ticketNumber) {
+    document.getElementById('delete-ticket-number').textContent = ticketNumber;
+    document.getElementById('delete-form').action = `/admin/tickets/delete/${ticketId}`;
+    document.getElementById('delete-modal').classList.remove('hidden');
+  }
+
+  function closeDeleteModal() {
+    document.getElementById('delete-modal').classList.add('hidden');
+  }
+
+  /* ---------- EXPORT DATA ---------- */
+  function exportData() {
+    // Implementasi export ke Excel
+    alert('Fitur export akan diimplementasikan');
+  }
+
+  /* ---------- CLEANUP ---------- */
+  window.addEventListener('beforeunload', () => {
+    stopAutoRefresh();
+  });
+
+  // Close modal on outside click
+  window.onclick = function(event) {
+    if (event.target.id === 'skip-modal') {
+      closeSkipModal();
+    } else if (event.target.id === 'delete-modal') {
+      closeDeleteModal();
+    }
+  }
+
+  // Handle Escape key
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+      closeSkipModal();
+      closeDeleteModal();
+    }
+  });
+</script>
+{% endblock %}

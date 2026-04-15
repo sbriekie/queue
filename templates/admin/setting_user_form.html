@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="w-7/9 mx-auto">
+
+  <div class="mb-6">
+    <a href="{{ url_for('admin.users_list') }}" class="text-slate-500 hover:text-slate-700 text-sm flex items-center gap-1">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+        <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
+      </svg>
+      Kembali ke Users
+    </a>
+  </div>
+
+  <h1 class="text-2xl font-semibold mb-6 text-slate-800">
+    {{ 'Edit User' if user else 'Add New User' }}
+  </h1>
+
+  <!-- Flash Messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="mb-4 space-y-2">
+        {% for category, message in messages %}
+          <div class="px-4 py-3 rounded-lg 
+            {{ 'bg-red-100 text-red-700 border border-red-200' if category == 'danger' else 
+               'bg-green-100 text-green-700 border border-green-200' if category == 'success' else
+               'bg-blue-100 text-blue-700 border border-blue-200' }}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="bg-white rounded-lg shadow p-6">
+    <form method="POST" action="{{ url_for('admin.user_save') }}" class="space-y-5">
+      
+      <!-- CSRF TOKEN (+) -->
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      
+      <!-- Hidden field untuk edit mode -->
+      {% if user %}
+      <input type="hidden" name="user_id" value="{{ user.id }}">
+      {% endif %}
+
+      <!-- Username -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">
+          Username <span class="text-red-500">*</span>
+        </label>
+        <input
+          type="text"
+          name="username"
+          value="{{ user.username if user else '' }}"
+          placeholder="username untuk login IMAP"
+          required
+          class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
+        <p class="text-xs text-slate-500 mt-1">Username untuk login via IMAP (contoh: nama.user atau nama@bps.go.id)</p>
+      </div>
+
+      <!-- Role -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">
+          Role <span class="text-red-500">*</span>
+        </label>
+        <select
+          name="role"
+          required
+          class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+        >
+          {% for role in UserRole %}
+            {% if role != UserRole.superadmin or is_superadmin %}
+            <option value="{{ role.value }}" 
+                    {{ 'selected' if (user and user.role == role) or (not user and role == UserRole.OPERATOR) else '' }}>
+              {{ role.value.title() }}
+              {% if role == UserRole.superadmin %}(Full Access){% endif %}
+              {% if role == UserRole.ADMIN %}(Manage Satker){% endif %}
+              {% if role == UserRole.OPERATOR %}(Operator){% endif %}
+              {% if role == UserRole.VIEWER %}(View Only){% endif %}
+            </option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Satker (Hanya untuk Superadmin) -->
+      {% if is_superadmin %}
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">
+          Satker <span class="text-red-500">*</span>
+        </label>
+        <select
+          name="kode_satker"
+          required
+          class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+        >
+          <option value="">-- Pilih Satker --</option>
+          {% for s in satker_list %}
+            <option value="{{ s.kode_satker }}" 
+                    {{ 'selected' if (user and user.kode_satker == s.kode_satker) or (not user and s.kode_satker == default_satker) else '' }}>
+              {{ s.kode_satker }} - {{ s.nama }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <!-- Hidden satker untuk admin biasa -->
+      <input type="hidden" name="kode_satker" value="{{ default_satker }}">
+      <div class="bg-slate-50 p-3 rounded-lg">
+        <label class="block text-sm font-medium text-slate-700 mb-1">Satker</label>
+        <p class="text-sm text-slate-600">{{ default_satker }} - {{ current_satker.nama if current_satker else 'Unknown' }}</p>
+        <p class="text-xs text-slate-500 mt-1">Admin hanya bisa menambah user untuk satker sendiri</p>
+      </div>
+      {% endif %}
+
+      <!-- Info Box -->
+      <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div class="flex items-start gap-3">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-600 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+          </svg>
+          <div class="text-sm text-blue-800">
+            <p class="font-medium">Informasi Login</p>
+            <p class="mt-1">User akan login menggunakan username di atas dengan password dari IMAP server (mailhost.bps.go.id). Tidak perlu mengatur password di sini.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Buttons -->
+      <div class="flex gap-3 pt-4 border-t border-slate-100">
+        <button
+          type="submit"
+          class="flex-1 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium">
+          {{ 'Simpan Perubahan' if user else 'Tambah User' }}
+        </button>
+        <a href="{{ url_for('admin.users_list') }}"
+           class="px-5 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition text-center">
+          Batal
+        </a>
+      </div>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

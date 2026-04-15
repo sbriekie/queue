@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="w-7/9 mx-auto">
+
+  <!-- HEADER -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800">
+        Manajemen Pengumuman
+        {% if current_satker %}
+        <span class="text-lg font-normal text-slate-500">
+          - {{ current_satker.nama }}
+        </span>
+        {% endif %}
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Total Pengumuman:
+        <span class="font-semibold text-slate-700">{{ anns|length }}</span>
+      </p>
+    </div>
+
+    <!-- TOOLBAR -->
+    <div class="mt-4 md:mt-0 flex items-center gap-3 flex-wrap">
+      {% if is_superadmin %}
+      <form method="GET" action="{{ url_for('admin.ann_list') }}">
+        <select name="satker" onchange="this.form.submit()"
+                class="bg-white border border-slate-300 text-slate-700 text-sm rounded-lg
+                       focus:ring-blue-500 focus:border-blue-500 block w-64 p-2.5">
+          {% for s in satker_list %}
+          <option value="{{ s.kode_satker }}"
+            {% if s.kode_satker == selected_satker %}selected{% endif %}>
+            {{ s.kode_satker }} - {{ s.nama }}
+          </option>
+          {% endfor %}
+        </select>
+      </form>
+      {% else %}
+      <span class="text-sm text-slate-600 bg-slate-100 px-3 py-2 rounded-lg border border-slate-200">
+        <i class="fas fa-building mr-1"></i>
+        {{ current_satker.nama if current_satker else 'Unknown' }}
+      </span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- FLASH MESSAGE -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="mb-6 space-y-2">
+      {% for category, message in messages %}
+      <div class="px-4 py-3 rounded-lg text-sm
+        {% if category == 'danger' %}
+          bg-red-100 text-red-700 border border-red-200
+        {% elif category == 'success' %}
+          bg-green-100 text-green-700 border border-green-200
+        {% elif category == 'info' %}
+          bg-blue-100 text-blue-700 border border-blue-200
+        {% else %}
+          bg-yellow-100 text-yellow-700 border border-yellow-200
+        {% endif %}">
+        {{ message }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endwith %}
+
+  <!-- ADD ANNOUNCEMENT (+CSRF) -->
+  <div class="bg-white rounded-lg shadow p-4 mb-6">
+    <form method="POST" action="{{ url_for('admin.ann_add') }}"
+          class="flex flex-col md:flex-row gap-3">
+      
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <input type="text"
+             name="text"
+             placeholder="Tulis pengumuman..."
+             required
+             class="flex-1 border border-slate-300 rounded-lg px-3 py-2
+                    focus:outline-none focus:ring-2 focus:ring-blue-500">
+
+      <input type="date"
+             name="tanggal_tampil"
+             class="border border-slate-300 rounded-lg px-3 py-2"
+             placeholder="Tanggal tampil">
+
+      <input type="date"
+             name="tanggal_akhir"
+             class="border border-slate-300 rounded-lg px-3 py-2"
+             placeholder="Tanggal berakhir">
+
+      <select name="tipe"
+              class="border border-slate-300 rounded-lg px-3 py-2">
+        <option value="text" selected>Text</option>
+        <option value="html">HTML</option>
+        <option value="markdown">Markdown</option>
+      </select>
+
+      {% if is_superadmin %}
+      <input type="hidden" name="kode_satker" value="{{ selected_satker }}">
+      {% endif %}
+
+      <button type="submit"
+              class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2
+                     rounded-lg transition whitespace-nowrap">
+        <i class="fas fa-plus mr-1"></i> Tambah
+      </button>
+    </form>
+  </div>
+
+  <!-- ANNOUNCEMENT TABLE -->
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left text-slate-600">
+        <thead class="text-xs text-slate-700 uppercase bg-slate-100">
+          <tr>
+            <th class="px-4 py-3">Pengumuman</th>
+            <th class="px-4 py-3">Tipe</th>
+            <th class="px-4 py-3">Tanggal Tampil</th>
+            <th class="px-4 py-3">Tanggal Berakhir</th>
+            <th class="px-4 py-3 text-center">Aksi</th>
+          </tr>
+        </thead>
+
+        <tbody class="divide-y divide-slate-100">
+          {% for a in anns %}
+          <tr class="hover:bg-slate-50 transition-colors">
+            <td class="px-4 py-3 font-medium text-slate-800">{{ a.text }}</td>
+            <td class="px-4 py-3 text-slate-500">{{ a.tipe }}</td>
+            <td class="px-4 py-3 text-slate-500">
+              {% if a.tanggal_tampil %}{{ a.tanggal_tampil.strftime('%d/%m/%Y') }}{% else %}-{% endif %}
+            </td>
+            <td class="px-4 py-3 text-slate-500">
+              {% if a.tanggal_akhir %}{{ a.tanggal_akhir.strftime('%d/%m/%Y') }}{% else %}-{% endif %}
+            </td>
+            <td class="px-4 py-3 text-center">
+              <div class="flex justify-center items-center gap-2">
+
+                <!-- EDIT BUTTON -->
+                <button type="button"
+                  onclick='openEditModal({{ a.id }}, {{ a.text|tojson|forceescape }}, "{{ a.tipe }}", "{{ a.tanggal_tampil or '' }}", "{{ a.tanggal_akhir or '' }}")'
+                  class="text-amber-600 hover:text-amber-800 p-2 rounded hover:bg-amber-50 transition"
+                  title="Edit">
+                  ✏️
+                </button>
+
+                <!-- DELETE FORM (+CSRF) -->
+                <form method="POST"
+                      action="{{ url_for('admin.ann_delete', ann_id=a.id) }}"
+                      onsubmit="return confirm('Hapus pengumuman ini?')"
+                      class="inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit"
+                          class="text-red-600 hover:text-red-800 hover:bg-red-50 p-2 rounded transition"
+                          title="Hapus">
+                    🗑️
+                  </button>
+                </form>
+
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="py-12 text-center text-slate-500">
+              <p class="text-lg font-medium text-slate-600">Belum ada pengumuman</p>
+              <p class="text-sm mt-1">Tambahkan pengumuman baru menggunakan form di atas</p>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- EDIT MODAL (+CSRF) -->
+<div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+    <h3 class="text-lg font-semibold text-slate-800 mb-4">Edit Pengumuman</h3>
+
+    <form id="editForm" method="POST" action="">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Isi Pengumuman</label>
+          <textarea name="text" id="editText" rows="4" required
+                    class="w-full border border-slate-300 rounded-lg px-3 py-2
+                           focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Tanggal Tampil</label>
+            <input type="date" name="tanggal_tampil" id="editTanggalTampil"
+                   class="w-full border border-slate-300 rounded-lg px-3 py-2">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Tanggal Berakhir</label>
+            <input type="date" name="tanggal_akhir" id="editTanggalAkhir"
+                   class="w-full border border-slate-300 rounded-lg px-3 py-2">
+          </div>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Tipe</label>
+          <select name="tipe" id="editTipe"
+                  class="w-full border border-slate-300 rounded-lg px-3 py-2">
+            <option value="text">Text</option>
+            <option value="html">HTML</option>
+            <option value="markdown">Markdown</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex gap-3 mt-6">
+        <button type="button" onclick="closeEditModal()"
+                class="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50">
+          Batal
+        </button>
+        <button type="submit"
+                class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          Simpan
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// PERBAIKAN: Gunakan DOM element references yang proper
+const editModal = document.getElementById('editModal');
+const editForm = document.getElementById('editForm');
+const editText = document.getElementById('editText');
+const editTipe = document.getElementById('editTipe');
+const editTanggalTampil = document.getElementById('editTanggalTampil');
+const editTanggalAkhir = document.getElementById('editTanggalAkhir');
+
+function openEditModal(id, text, tipe, tanggalTampil, tanggalAkhir) {
+  // Set action URL
+  editForm.action = '{{ url_for("admin.ann_edit", ann_id=0) }}'.replace('0', id);
+  
+  // PERBAIKAN: Gunakan textContent untuk handle escape karakter dan newline dengan aman
+  editText.value = text;
+  editTipe.value = tipe;
+  editTanggalTampil.value = tanggalTampil || '';
+  editTanggalAkhir.value = tanggalAkhir || '';
+  
+  // Show modal
+  editModal.classList.remove('hidden');
+  editModal.classList.add('flex');
+}
+
+function closeEditModal() {
+  editModal.classList.add('hidden');
+  editModal.classList.remove('flex');
+  // Optional: Clear form
+  editForm.reset();
+}
+
+// Close on outside click
+editModal.addEventListener('click', function(e) {
+  if (e.target === this) closeEditModal();
+});
+
+// Close on Escape key
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && !editModal.classList.contains('hidden')) {
+    closeEditModal();
+  }
+});
+</script>
+
+{% endblock %}

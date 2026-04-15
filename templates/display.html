@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Display Antrian – {{ satker_nama }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    :root{ --c-primary: #eb5325; }
+    
+    /* Ticker Animation - MODIFIED untuk seamless infinite scroll */
+    .ticker-wrapper {
+      overflow: hidden;
+      white-space: nowrap;
+      position: relative;
+      width: 100%;
+    }
+    
+    .ticker {
+      display: inline-block;
+      white-space: nowrap;
+      /* MODIFIED: Hapus padding-left: 100% agar mulai dari kiri, 
+         gunakan animation infinite, dan durasi dinamis via JS */
+      animation: scroll linear infinite;
+      will-change: transform; /* Optimasi performa */
+    }
+    
+    @keyframes scroll {
+      0% { transform: translateX(0); }
+      /* MODIFIED: Hanya geser 50% karena konten diduplikasi */
+      100% { transform: translateX(-50%); }
+    }
+    
+    /* Class untuk trigger rotasi - TIDAK LAGI DIGUNAKAN tapi dibiarkan untuk kompatibilitas */
+    .ticker-switching {
+      animation: none !important;
+    }
+    
+    .pulse-ring { 
+      animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite; 
+    }
+    
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(235, 83, 37, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(235, 83, 37, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(235, 83, 37, 0); }
+    }
+  </style>
+
+  <script>
+    tailwind.config = { 
+      theme:{ extend:{ colors:{ primary:'#eb5325' } } }
+    }
+  </script>
+</head>
+
+<body class="h-screen flex flex-col bg-gradient-to-br from-slate-100 to-slate-200 text-slate-800 overflow-hidden" data-kode-satker="{{ kode_satker }}">
+
+  <!-- Audio Unlock Overlay -->
+  <div id="audio-unlock" class="fixed inset-0 bg-black/90 z-50 flex items-center justify-center cursor-pointer transition-opacity duration-500">
+    <div class="text-center text-white p-2 max-w-lg">
+      <div class="pulse-ring inline-flex items-center justify-center w-32 h-32 rounded-full bg-primary mb-6">
+        <i class="fas fa-volume-up text-5xl text-white"></i>
+      </div>
+      <h2 class="text-4xl font-bold mb-4">Klik untuk Memulai</h2>
+      <p class="text-xl text-gray-300 mb-2">Aktifkan suara panggilan antrian</p>
+      <p class="text-sm text-gray-500">Video akan tetap mute (0% volume)</p>
+    </div>
+  </div>
+
+  <!-- Main Content Grid -->
+  <div class="flex-1 grid grid-cols-12 gap-1 p-2 min-h-0">
+    
+    <!-- Left Column: Video & Chart -->
+    <div class="col-span-4 flex flex-col gap-1 min-h-0 h-full">
+      <!-- Video Box -->
+      <div class="flex-1 min-h-0 bg-black rounded-2xl shadow-xl overflow-hidden relative">
+        <div id="video-container" class="w-full h-full flex items-center justify-center">
+          <div class="text-gray-500">Memuat video...</div>
+        </div>
+      </div>
+      
+      <!-- Chart Box -->
+      <div class="flex-1 min-h-0 bg-white rounded-2xl shadow-lg overflow-hidden relative">
+        <div class="absolute top-1 left-1/2 -translate-x-1/2 z-10 max-w-[80%] pointer-events-none">
+          <span id="chart-title" class="text-xs font-bold text-slate-700 bg-white/95 px-3 py-1.5 rounded-md text-center">Memuat chart...</span>
+        </div>
+        <div class="w-full h-full p-2">
+          <canvas id="chart-canvas"></canvas>
+        </div>
+        <div id="chart-loading" class="absolute inset-0 flex items-center justify-center bg-white z-20">
+          <div class="flex flex-col items-center gap-1">
+            <i class="fas fa-spinner fa-spin text-primary text-2xl"></i>
+            <span class="text-slate-400 text-sm">Memuat data...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Desks & Services -->
+    <div class="col-span-8 flex flex-col gap-1 min-h-0">
+       <!-- HEADER NAMA SATKER -->
+      <div id="satker-header" class="rounded-2xl bg-gradient-to-r from-slate-50 via-white to-slate-50 border-b-4 border-primary p-3 text-center shrink-0 shadow-sm">
+        <h1 id="satker-name" class="font-bold md:text-1xl text-slate-800 uppercase">
+          PELAYANAN STATISTIK TERPADU<br>{{ satker_nama }}
+        </h1>
+      </div>
+
+      <div class="flex-1 bg-white rounded-2xl p-2 overflow-hidden flex flex-col shadow-lg">
+        <div id="desks-grid" class="flex-1 min-h-0 w-full" style="display: grid; grid-template-columns: 1fr;"></div>
+      </div>
+
+      <div class="shrink-0 bg-white rounded-2xl shadow-lg p-2">
+        <div id="services-grid" class="grid grid-cols-5 gap-1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Area dengan Ticker yang Diperbaiki -->
+  <div class="h-9 shrink-0 flex border-t-4 border-primary">
+    <div class="w-[130px] bg-slate-800 text-white flex flex-col items-center justify-center px-1 border-r border-slate-600 relative overflow-hidden">
+      <div id="bottom-clock" class="text-2xl leading-none tracking-wider">--:--:--</div>
+    </div>
+    <div class="flex-1 bg-slate-900 text-white flex items-center overflow-hidden relative ticker-wrapper">
+      <!-- MODIFIED: Struktur tetap sama, konten akan diisi JS dengan duplikasi -->
+      <span id="ticker-text" class="ticker text-xl font-medium px-4">Selamat Datang di {{ satker_nama }}</span>
+    </div>
+  </div>
+
+  <script>
+  // State management
+  const state = {
+    lastTicket: null,
+    lastVideo: null,
+    isAudioUnlocked: false,
+    isPlaying: false,
+    audioContext: null,
+    deskStatus: [],
+    kodeSatker: document.body.dataset.kodeSatker,
+    serverTime: null,
+    serverOffset: 0,
+    
+    // Chart State
+    chartQueue: [],
+    currentChartIndex: 0,
+    chartInstance: null,
+    
+    // Ticker State yang Diperbarui
+    tickerList: [],
+    // Hapus currentTickerIndex dan isTickerAnimating karena tidak lagi digunakan untuk rotasi
+    
+    // Video State
+    videoList: [],
+    currentVideoIndex: 0,
+    
+    // Config
+    config: {
+      pointDelay: 150,
+      tickerSpeed: 60, // pixels per second - MODIFIED: Tambah konfigurasi kecepatan ticker
+      tickerInterval: 30000, // Refresh ticker dari DB setiap 30 detik
+      videoInterval: 300000  // 5 menit
+    }
+  };
+
+  const $ = id => document.getElementById(id);
+
+  // ============================================================
+  // CHART SYSTEM (tidak berubah)
+  // ============================================================
+  async function fetchChartQueue() {
+      try {
+          const res = await fetch(`/api/charts/${state.kodeSatker}`);
+          const data = await res.json();
+          if (data.success && data.charts?.length > 0) {
+              state.chartQueue = data.charts;
+          } else {
+              state.chartQueue = [{ slug: 'default', judul: 'Data Statistik' }];
+          }
+      } catch (err) {
+          state.chartQueue = [{ slug: 'default', judul: 'Data Statistik' }];
+      }
+  }
+
+  async function getChartData(slug) {
+      try {
+          const res = await fetch(`/api/charts/${state.kodeSatker}/${slug}`);
+          const data = await res.json();
+          return data.success ? data : null;
+      } catch (err) {
+          return null;
+      }
+  }
+
+  function calculateYAxisRange(datasets) {
+      let allValues = [];
+      datasets.forEach(ds => {
+          allValues = allValues.concat(ds.data.filter(v => v !== null && !isNaN(v)));
+      });
+      if (allValues.length === 0) return { min: 0, max: 100 };
+      const min = Math.min(...allValues);
+      const max = Math.max(...allValues);
+      const padding = (max - min) * 0.1;
+      return { min: Math.floor(min - padding), max: Math.ceil(max + padding) };
+  }
+
+  const dataLabelsPlugin = {
+      id: 'dataLabels',
+      afterDatasetsDraw(chart) {
+          const ctx = chart.ctx;
+          chart.data.datasets.forEach((dataset, i) => {
+              const meta = chart.getDatasetMeta(i);
+              if (!meta.hidden) {
+                  meta.data.forEach((element, index) => {
+                      const value = dataset.data[index];
+                      if (value !== null) {
+                          ctx.fillStyle = '#334155';
+                          ctx.font = 'bold 11px Arial';
+                          ctx.textAlign = 'center';
+                          ctx.textBaseline = 'bottom';
+                          ctx.fillText(value, element.x, element.y - 8);
+                      }
+                  });
+              }
+          });
+      }
+  };
+
+  async function runChartCycle() {
+      if (state.chartQueue.length === 0) return;
+      
+      const currentChart = state.chartQueue[state.currentChartIndex];
+      const chartData = await getChartData(currentChart.slug);
+      
+      if (!chartData) {
+          state.currentChartIndex = (state.currentChartIndex + 1) % state.chartQueue.length;
+          setTimeout(runChartCycle, 3000);
+          return;
+      }
+      
+      if ($('chart-title')) $('chart-title').textContent = chartData.judul || currentChart.judul;
+      if ($('chart-loading')) $('chart-loading').style.display = 'none';
+      
+      if (state.chartInstance) {
+          state.chartInstance.destroy();
+          state.chartInstance = null;
+      }
+      
+      const ctx = $('chart-canvas').getContext('2d');
+      const { labels, datasets } = chartData.data_json;
+      const yRange = calculateYAxisRange(datasets);
+      
+      const chartConfig = {
+          type: chartData.tipe_chart || 'line',
+          data: { 
+              labels: labels, 
+              datasets: datasets.map(ds => ({
+                  label: ds.label,
+                  data: new Array(labels.length).fill(null),
+                  borderColor: ds.borderColor || '#eb5325',
+                  backgroundColor: ds.backgroundColor || 'transparent',
+                  fill: ds.fill !== undefined ? ds.fill : false,
+                  tension: ds.tension || 0.4,
+                  borderWidth: ds.borderWidth || 3,
+                  pointBackgroundColor: '#fff',
+                  pointBorderColor: ds.borderColor || '#eb5325',
+                  pointBorderWidth: 2,
+                  pointRadius: 4,
+                  pointHoverRadius: 6
+              }))
+          },
+          plugins: [dataLabelsPlugin],
+          options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: false,
+              interaction: { intersect: false, mode: 'index' },
+              layout: { padding: { top: 35, right: 20, bottom: 10, left: 10 } },
+              plugins: {
+                  legend: { 
+                      display: true, 
+                      position: 'top', 
+                      labels: { 
+                          useLineStyle: true, 
+                          padding: 10, 
+                          font: { size: 10 }, 
+                          boxWidth: 10 
+                      } 
+                  },
+                  tooltip: { 
+                      enabled: true, 
+                      backgroundColor: 'rgba(0,0,0,0.8)', 
+                      padding: 10, 
+                      cornerRadius: 6 
+                  }
+              },
+              scales: {
+                  y: { 
+                      display: false, 
+                      min: yRange.min, 
+                      max: yRange.max,
+                      beginAtZero: false 
+                  },
+                  x: { 
+                      border: { display: false }, 
+                      grid: { display: false }, 
+                      ticks: { 
+                          display: true, 
+                          font: { size: 9 }, 
+                          maxRotation: 45, 
+                          autoSkip: true, 
+                          maxTicksLimit: 15 
+                      } 
+                  }
+              },
+              elements: { 
+                  line: { tension: 0.4, borderWidth: 3 }, 
+                  point: { radius: 4, hoverRadius: 6, borderWidth: 2, backgroundColor: '#fff' } 
+              }
+          }
+      };
+      
+      state.chartInstance = new Chart(ctx, chartConfig);
+      
+      const ANIMATION_REPEAT = 3;
+      for (let repeat = 0; repeat < ANIMATION_REPEAT; repeat++) {
+          state.chartInstance.data.datasets.forEach((ds, i) => {
+              ds.data = new Array(labels.length).fill(null);
+          });
+          state.chartInstance.update('none');
+
+          await new Promise(r => setTimeout(r, 400));
+
+          for (let dsIndex = 0; dsIndex < datasets.length; dsIndex++) {
+              for (let i = 0; i < labels.length; i++) {
+                  state.chartInstance.data.datasets[dsIndex].data[i] = datasets[dsIndex].data[i];
+                  state.chartInstance.update('none');
+                  await new Promise(r => setTimeout(r, state.config.pointDelay));
+              }
+              if (dsIndex < datasets.length - 1) {
+                  await new Promise(r => setTimeout(r, 800));
+              }
+          }
+
+          if (repeat < ANIMATION_REPEAT - 1) {
+              await new Promise(r => setTimeout(r, 1200));
+          }
+      }
+      
+      await new Promise(r => setTimeout(r, 3000));
+      state.currentChartIndex = (state.currentChartIndex + 1) % state.chartQueue.length;
+      runChartCycle();
+  }
+
+
+  // ============================================================
+  // TICKER SYSTEM - MODIFIED untuk Continuous Scroll
+  // ============================================================
+  
+  async function fetchTickers() {
+    try {
+      const res = await fetch(`/api/tickers/${state.kodeSatker}`);
+      const data = await res.json();
+
+      let list = [];
+
+      if (data.tickers && Array.isArray(data.tickers) && data.tickers.length > 0) {
+        list = data.tickers.filter(t => t && t.trim() !== '');
+      }
+      else if (typeof data.ticker === 'string' && data.ticker.includes('  |  ')) {
+        list = data.ticker.split('  |  ').map(t => t.trim()).filter(t => t !== '');
+      }
+      else if (typeof data.ticker === 'string' && data.ticker.trim() !== '') {
+        list = [data.ticker];
+      }
+
+      if (list.length > 0) {
+        state.tickerList = list;
+        console.log('[TICKER] Loaded', list.length, 'items:', list);
+      } else {
+        state.tickerList = [`Selamat Datang di {{ satker_nama }}`];
+      }
+
+      // MODIFIED: Update ticker display setelah fetch
+      updateTickerContent();
+
+    } catch (e) {
+      console.error('[TICKER] Fetch error:', e);
+      state.tickerList = [`Selamat Datang di {{ satker_nama }}`];
+      updateTickerContent();
+    }
+  }
+
+  // MODIFIED: Fungsi baru untuk update konten ticker dengan duplikasi (seamless)
+  function updateTickerContent() {
+    const tickerEl = $('ticker-text');
+    if (!tickerEl || state.tickerList.length === 0) return;
+    
+    // Gabungkan semua item dengan divider " | "
+    const content = state.tickerList.join(' &nbsp;&nbsp;|&nbsp;&nbsp; ');
+    
+    // Duplikasi konten (A-B-C-A-B-C) agar animasi seamless saat loop
+    // Spasi ekstra di akhir untuk jarak sebelum repeat
+    const duplicatedContent = `${content}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${content}`;
+    
+    tickerEl.innerHTML = duplicatedContent;
+    
+    // Hitung durasi animasi berdasarkan lebar konten agar kecepatan konsisten
+    // Gunakan setTimeout untuk memastikan DOM sudah render
+    setTimeout(() => {
+      const width = tickerEl.scrollWidth / 2; // Ambil setengah karena duplikat
+      const duration = width / state.config.tickerSpeed; 
+      
+      // Minimal 10 detik, maksimal 60 detik agar tidak terlalu cepat atau lambat
+      const finalDuration = Math.max(10, Math.min(duration, 60));
+      
+      tickerEl.style.animationDuration = `${finalDuration}s`;
+      console.log(`[TICKER] Duration set to ${finalDuration}s for width ${width}px`);
+    }, 100);
+  }
+
+  // MODIFIED: Init ticker sederhana, tanpa event listener animationend
+  function initTicker() {
+    // Tidak perlu event listener karena animation adalah infinite loop
+    console.log('[TICKER] Initialized continuous scroll');
+  }
+
+
+  // Video System (tidak berubah)
+  async function fetchVideos() {
+    try {
+      if (!state.kodeSatker) {
+        console.error('[VIDEO] kodeSatker tidak terdefinisi');
+        $('video-container').innerHTML = '<div class="text-gray-400">Satker tidak valid</div>';
+        return;
+      }
+
+      if (state.videoInterval) {
+        clearInterval(state.videoInterval);
+        state.videoInterval = null;
+      }
+
+      const res = await fetch(`/api/videos/${encodeURIComponent(state.kodeSatker)}?_=${Date.now()}`);
+      
+      if (!res.ok) {
+        if (res.status === 404) {
+          $('video-container').innerHTML = '<div class="text-gray-400">Video tidak ditemukan</div>';
+        } else {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        return;
+      }
+      
+      const data = await res.json();
+      
+      if (data.success && data.videos?.length > 0) {
+        state.videoList = data.videos;
+        state.currentVideoIndex = 0;
+        
+        loadVideo(state.videoList[0].filename);
+        
+        if (state.videoList.length > 1) {
+          state.videoInterval = setInterval(() => {
+            state.currentVideoIndex = (state.currentVideoIndex + 1) % state.videoList.length;
+            loadVideo(state.videoList[state.currentVideoIndex].filename);
+          }, state.config.videoInterval);
+        }
+      } else {
+        $('video-container').innerHTML = '<div class="text-gray-400">Tidak ada video</div>';
+      }
+      
+    } catch (err) {
+      console.error('[VIDEO] Error:', err);
+      $('video-container').innerHTML = '<div class="text-gray-400">Gagal memuat video</div>';
+    }
+  }
+
+  function extractYouTubeId(url) {
+    if (!url) return null;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|watch\?.+&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  }
+
+  function loadVideo(url) {
+    if (!url) {
+      $('video-container').innerHTML = '<div class="text-gray-400">Tidak ada video</div>';
+      return;
+    }
+    
+    state.lastVideo = url;
+    const container = $('video-container');
+    const videoId = extractYouTubeId(url);
+    
+    if (videoId) {
+      container.innerHTML = `<iframe id="media-player" class="w-full h-full" src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&rel=0&showinfo=0&controls=0" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+    } else if (url.match(/\.(mp4|webm|ogg|mov)$/i)) {
+      const ext = url.split('.').pop().toLowerCase();
+      const mimeType = {
+        'mp4': 'video/mp4',
+        'webm': 'video/webm',
+        'ogg': 'video/ogg',
+        'mov': 'video/quicktime'
+      }[ext] || 'video/mp4';
+      
+      container.innerHTML = `<video id="media-player" class="w-full h-full object-cover" autoplay muted loop playsinline><source src="${url}" type="${mimeType}"></video>`;
+    } else {
+      container.innerHTML = '<div class="text-gray-400">Format tidak didukung</div>';
+    }
+  }
+
+  const muteObserver = setInterval(() => {
+    const player = $('media-player');
+    if (player?.tagName === 'VIDEO') {
+      player.muted = true;
+      player.volume = 0;
+    }
+  }, 1000);
+
+  state.muteObserver = muteObserver;
+
+  // ============================================================
+  // JAM & SERVICE STATUS (tidak berubah)
+  // ============================================================
+  function syncTime(serverTimeStr) {
+    let serverDate;
+    if (serverTimeStr.includes('T')) {
+      serverDate = new Date(serverTimeStr);
+    } else {
+      const parts = serverTimeStr.split(/[- :]/);
+      serverDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]),
+        parseInt(parts[3]), parseInt(parts[4]), parseInt(parts[5]));
+    }
+    if (!isNaN(serverDate.getTime())) {
+      state.serverOffset = serverDate.getTime() - new Date().getTime();
+    }
+  }
+
+  function getSyncedTime() {
+    return new Date(new Date().getTime() + state.serverOffset);
+  }
+
+  function getServiceStatus(now = getSyncedTime()) {
+    const hour = now.getHours() + (now.getMinutes() / 60);
+    const day = now.getDay();
+    
+    if (day === 0 || day === 6) {
+      return { 
+        mode: 'closed', 
+        title: 'LAYANAN TUTUP', 
+        subtitle: 'Hari libur. Layanan buka Senin s.d Jumat', 
+        badge: 'Libur', 
+        icon: 'fa-store-slash', 
+        bgColor: 'bg-slate-100', 
+        borderColor: 'border-slate-300', 
+        textColor: 'text-slate-600', 
+        badgeColor: 'bg-slate-300 text-slate-700' 
+      };
+    }
+    
+    const isFriday = (day === 5);
+    
+    if (isFriday) {
+      if (hour >= 8.0 && hour < 12.0) {
+        return { mode: 'waiting', title: 'SILAHKAN TUNGGU PETUGAS PELAYANAN', subtitle: 'Petugas sedang menyiapkan meja pelayanan', badge: 'Menunggu Petugas', icon: 'fa-user-clock', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', textColor: 'text-blue-800', badgeColor: 'bg-blue-200 text-blue-800' };
+      }
+      else if (hour >= 12.0 && hour < 13.5) {
+        return { mode: 'lunch', title: 'ISTIRAHAT SIANG', subtitle: 'Layanan akan dibuka kembali pukul 13:30 WITA', badge: 'Jam Istirahat', icon: 'fa-utensils', bgColor: 'bg-orange-50', borderColor: 'border-orange-200', textColor: 'text-orange-800', badgeColor: 'bg-orange-200 text-orange-800' };
+      }
+      else if (hour >= 13.5 && hour < 16.0) {
+        return { mode: 'waiting', title: 'SILAHKAN TUNGGU PETUGAS PELAYANAN', subtitle: 'Petugas sedang menyiapkan meja pelayanan', badge: 'Menunggu Petugas', icon: 'fa-user-clock', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', textColor: 'text-blue-800', badgeColor: 'bg-blue-200 text-blue-800' };
+      }
+    } else {
+      if (hour >= 8.0 && hour < 12.0) {
+        return { mode: 'waiting', title: 'SILAHKAN TUNGGU PETUGAS PELAYANAN', subtitle: 'Petugas sedang menyiapkan meja pelayanan', badge: 'Menunggu Petugas', icon: 'fa-user-clock', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', textColor: 'text-blue-800', badgeColor: 'bg-blue-200 text-blue-800' };
+      }
+      else if (hour >= 12.0 && hour < 13.0) {
+        return { mode: 'lunch', title: 'ISTIRAHAT SIANG', subtitle: 'Layanan akan dibuka kembali pukul 13:00 WITA', badge: 'Jam Istirahat', icon: 'fa-utensils', bgColor: 'bg-orange-50', borderColor: 'border-orange-200', textColor: 'text-orange-800', badgeColor: 'bg-orange-200 text-orange-800' };
+      }
+      else if (hour >= 13.0 && hour < 15.5) {
+        return { mode: 'waiting', title: 'SILAHKAN TUNGGU PETUGAS PELAYANAN', subtitle: 'Petugas sedang menyiapkan meja pelayanan', badge: 'Menunggu Petugas', icon: 'fa-user-clock', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', textColor: 'text-blue-800', badgeColor: 'bg-blue-200 text-blue-800' };
+      }
+    }
+    
+    return { 
+      mode: 'closed', 
+      title: 'LAYANAN TUTUP', 
+      subtitle: 'Silakan kembali pada jam layanan<br>Senin - Kamis (08:00 - 15:30)<br>Jumat (08:00 - 16:00)', 
+      badge: 'Layanan Tutup', 
+      icon: 'fa-store-slash', 
+      bgColor: 'bg-slate-100', 
+      borderColor: 'border-slate-300', 
+      textColor: 'text-slate-600', 
+      badgeColor: 'bg-slate-300 text-slate-700' 
+    };
+  }
+
+  // ============================================================
+  // DISPLAY FUNCTIONS (tidak berubah)
+  // ============================================================
+  function renderServices(services) {
+    const container = $('services-grid');
+    if (!services || services.length === 0) {
+      container.innerHTML = '<div class="col-span-5 text-center text-slate-400 py-4">Tidak ada data</div>';
+      return;
+    }
+    container.innerHTML = services.map(s => `
+      <div class="bg-slate-50 rounded-lg p-1 text-center border border-slate-200">
+        <div class="text-xs text-slate-500 mb-1 truncate font-medium">${s.service_name}</div>
+        <div class="text-2xl font-bold text-slate-700">${s.last_ticket || '-'}</div>
+        <div class="text-[10px] text-slate-400 mt-1">${s.last_desk || '-'}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderDesks(desks) {
+    const container = $('desks-grid');
+    const now = getSyncedTime();
+    
+    if (!desks || desks.length === 0) {
+      const status = getServiceStatus(now);
+      container.style.gridTemplateColumns = '1fr';
+      container.innerHTML = `
+        <div class="h-full w-full flex flex-col items-center justify-center ${status.bgColor} rounded-xl border-2 ${status.borderColor} ${status.textColor} p-8">
+          <div class="mb-6"><i class="fas ${status.icon} text-7xl mb-4 opacity-80"></i></div>
+          <div class="text-4xl font-black mb-3 text-center tracking-wide">${status.title}</div>
+              <div class="text-xl font-medium opacity-80 text-center">${status.subtitle}</div>
+        </div>`;
+      return;
+    }
+
+    const colCount = desks.length;
+    container.style.gridTemplateColumns = `repeat(${colCount}, minmax(0, 1fr))`;
+    
+    container.innerHTML = desks.map((desk) => {
+      const isOnline = desk.is_online || false;
+      const isActive = desk.is_active !== false;
+      const servingNumber = desk.now_serving || '---';
+      let textSize = 'text-6xl';
+      if (desks.length > 4) textSize = 'text-4xl';
+      else if (desks.length > 2) textSize = 'text-5xl';
+      
+      let cardClass, borderClass, statusBadge;
+      
+      if (isActive && isOnline) {
+        if (servingNumber !== '---') {
+          cardClass = 'bg-gradient-to-br from-orange-50 to-white';
+          borderClass = 'border-primary';
+          statusBadge = '<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold flex items-center gap-1"><span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>AKTIF</span>';
+        } else {
+          cardClass = 'bg-yellow-50';
+          borderClass = 'border-yellow-200';
+          statusBadge = '<span class="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold">MENUNGGU</span>';
+        }
+      } else {
+        cardClass = 'bg-gray-100 opacity-75';
+        borderClass = 'border-gray-200';
+        statusBadge = '<span class="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold">TIDAK AKTIF</span>';
+      }
+      
+      return `
+        <div class="${cardClass} border-2 ${borderClass} rounded-xl shadow-md flex flex-col items-center justify-between h-full relative overflow-hidden p-6">
+          <div class="absolute top-3 right-3">${statusBadge}</div>
+          <div class="text-center w-full flex flex-col items-center justify-center flex-1">
+            <div class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 truncate w-full px-1">${desk.name}</div>
+            <div class="${textSize} font-black text-primary tabular-nums tracking-tight leading-none break-all">${servingNumber}</div>
+          </div>
+          <div class="w-full pt-4 border-t border-slate-200/50 text-center mt-auto">
+            ${servingNumber !== '---' && isOnline ? '<div class="text-xs text-slate-600 font-medium">Sedang Dilayani</div>' : '<div class="text-xs text-slate-400">Siap Melayani</div>'}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ============================================================
+  // DATA FETCHING & AUDIO (tidak berubah)
+  // ============================================================
+  async function fetchData() {
+      try {
+        const response = await fetch(`/api/display/${state.kodeSatker}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        
+        if (data.server_time) syncTime(data.server_time + 'Z');
+        
+        if (data.now_serving && data.now_serving !== state.lastTicket) {
+          if (state.isAudioUnlocked && !state.isPlaying) {
+            let servingDesk = 'Meja Petugas';
+            if (data.desk_status && Array.isArray(data.desk_status)) {
+              const activeDesk = data.desk_status.find(d => d.now_serving === data.now_serving && d.is_online);
+              if (activeDesk) servingDesk = activeDesk.name;
+            }
+            state.lastTicket = data.now_serving;
+            playCallSequence(data.now_serving, servingDesk);
+          }
+        }
+        
+        if (data.desk_status) renderDesks(data.desk_status);
+        if (data.services) renderServices(data.services);
+        
+      } catch (err) {
+        console.error('[FETCH] Error:', err);
+      }
+    }
+
+    async function playCallSequence(number, deskName = 'Loket') {
+      if (state.isPlaying || !state.isAudioUnlocked) return;
+      state.isPlaying = true;
+
+      const ttsUrl = `/api/replay/${encodeURIComponent(number)}?desk=${encodeURIComponent(deskName)}&_=${Date.now()}`;
+
+      const playAndWait = (audio) =>
+        new Promise((resolve, reject) => {
+          audio.addEventListener('ended', resolve, { once: true });
+          audio.addEventListener('error', reject, { once: true });
+          audio.play().catch(reject);
+        });
+
+      try {
+        const ding = new Audio('/static/ding.mp3');
+        await playAndWait(ding);
+
+        const tts1 = new Audio(ttsUrl);
+        await playAndWait(tts1);
+
+        await new Promise(r => setTimeout(r, 1000));
+
+        const tts2 = new Audio(ttsUrl);
+        await playAndWait(tts2);
+
+      } catch (e) {
+        console.error('[AUDIO] Sequence error:', e);
+      } finally {
+        state.isPlaying = false;
+      }
+    }
+
+  function updateClock() {
+    const now = getSyncedTime();
+    const timeStr = now.toLocaleTimeString('id-ID', { hour12: false });
+    if ($('bottom-clock')) $('bottom-clock').textContent = timeStr;
+  }
+
+  async function unlockAudio() {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (AudioContext) {
+        state.audioContext = new AudioContext();
+        if (state.audioContext.state === 'suspended') await state.audioContext.resume();
+      }
+      
+      const test = new Audio('/static/ding.mp3');
+      await test.play();
+      
+      state.isAudioUnlocked = true;
+      
+      $('audio-unlock').style.opacity = '0';
+      setTimeout(() => $('audio-unlock').remove(), 500);
+    } catch(e) {
+      console.error('Audio unlock failed:', e);
+    }
+  }
+
+  // Event Listeners
+  $('audio-unlock').addEventListener('click', unlockAudio);
+  document.addEventListener('keydown', (e) => {
+    if (!state.isAudioUnlocked) unlockAudio();
+  });
+
+  // ============================================================
+  // INITIALIZATION
+  // ============================================================
+  
+  // Init Clock
+  setInterval(updateClock, 1000);
+  updateClock();
+  
+  // Init Systems
+  (async function init() {
+    // Chart
+    await fetchChartQueue();
+    runChartCycle();
+    
+    // Ticker - MODIFIED
+    await fetchTickers(); // Load dan tampilkan immediately
+    initTicker(); // Setup (sekarang hanya log)
+    // Refresh setiap 30 detik akan otomatis memanggil fetchTickers yang update konten
+    
+    // Video
+    await fetchVideos();
+    
+    // Data Display (Desks & Services)
+    fetchData();
+    setInterval(fetchData, 3000);
+  })();
+  
+  </script>
+</body>
+</html>

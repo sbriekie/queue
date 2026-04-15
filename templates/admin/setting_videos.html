@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="w-7/9 mx-auto">
+
+  <!-- HEADER -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-bold text-slate-800">
+        Manajemen Video
+        {% if current_satker %}
+        <span class="text-base font-normal text-slate-500">
+          - {{ current_satker.nama }}
+        </span>
+        {% endif %}
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Total Video:
+        <span class="font-semibold text-slate-700">{{ videos|length }}</span>
+      </p>
+    </div>
+
+    <!-- TOOLBAR -->
+    <div class="mt-4 md:mt-0">
+      {% if is_superadmin %}
+      <form method="GET">
+        <select name="satker"
+                onchange="this.form.submit()"
+                class="bg-white border border-slate-300 text-sm rounded-lg w-64 px-3 py-2">
+          {% for s in satker_list %}
+          <option value="{{ s.kode_satker }}"
+            {{ 'selected' if s.kode_satker == selected_satker else '' }}>
+            {{ s.kode_satker }} - {{ s.nama }}
+          </option>
+          {% endfor %}
+        </select>
+      </form>
+      {% else %}
+      <span class="inline-block text-sm text-slate-700 bg-slate-100 px-4 py-2 rounded border">
+        {{ current_satker.nama }}
+      </span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- FLASH MESSAGE -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <div class="mb-6 space-y-2">
+    {% for category, message in messages %}
+    <div class="px-4 py-3 rounded border text-sm
+      {{ 'bg-red-100 text-red-700 border-red-300' if category == 'danger'
+         else 'bg-green-100 text-green-700 border-green-300' if category == 'success'
+         else 'bg-blue-100 text-blue-700 border-blue-300' }}">
+      {{ message }}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endwith %}
+
+  <!-- ADD VIDEO -->
+  <div class="bg-white border rounded-lg shadow-sm p-4 mb-6">
+    <form method="POST"
+          action="{{ url_for('admin.video_add') }}"
+          class="flex flex-col md:flex-row gap-3">
+      
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      {% if is_superadmin %}
+      <input type="hidden" name="kode_satker" value="{{ selected_satker }}">
+      {% endif %}
+
+      <input name="url"
+             required
+             placeholder="URL video (YouTube / MP4 / Embed)"
+             class="flex-1 border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+
+      <button type="submit"
+              class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded font-medium">
+        + Tambah Video
+      </button>
+    </form>
+  </div>
+
+  <!-- TABLE -->
+  <div class="bg-white border rounded-lg shadow-sm overflow-hidden">
+    <table class="w-full text-sm border-collapse">
+      <thead class="bg-slate-100 text-slate-700 uppercase text-xs">
+        <tr>
+          <th class="px-4 py-3 text-left border-b">URL Video</th>
+          <th class="px-4 py-3 text-center border-b w-32">Aksi</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for v in videos %}
+        <tr class="hover:bg-slate-50">
+
+          <td class="px-4 py-3 border-b break-all">
+            <a href="{{ v.filename }}" target="_blank"
+               class="text-blue-600 hover:underline">
+              {{ v.filename }}
+            </a>
+          </td>
+
+          <td class="px-4 py-3 border-b text-center">
+            <div class="flex justify-center gap-2">
+
+              <!-- EDIT -->
+              <button type="button"
+                onclick="openEditModal({{ v.id }}, '{{ v.filename|e }}')"
+                class="px-2 py-1 text-amber-700 border border-amber-300 rounded hover:bg-amber-50">
+                ✏️
+              </button>
+
+              <!-- DELETE -->
+              <form method="POST"
+                    action="{{ url_for('admin.video_delete', video_id=v.id) }}"
+                    onsubmit="return confirm('Hapus video ini?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit"
+                        class="px-2 py-1 text-red-700 border border-red-300 rounded hover:bg-red-50">
+                  🗑
+                </button>
+              </form>
+
+            </div>
+          </td>
+
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="2" class="py-10 text-center text-slate-500">
+            Belum ada video
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- EDIT MODAL -->
+<div id="editModal"
+     class="fixed inset-0 bg-black bg-opacity-40 hidden items-center justify-center z-50">
+
+  <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+    <h3 class="text-lg font-semibold mb-4 text-slate-800">
+      Edit Video
+    </h3>
+
+    <form id="editForm" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="text"
+             name="url"
+             id="editUrl"
+             required
+             class="w-full mb-4 border border-slate-300 rounded px-3 py-2 text-sm
+                    focus:outline-none focus:ring-2 focus:ring-blue-500">
+
+      <div class="flex gap-3">
+        <button type="button"
+                onclick="closeEditModal()"
+                class="flex-1 border border-slate-300 rounded py-2 hover:bg-slate-100">
+          Batal
+        </button>
+        <button type="submit"
+                class="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded py-2">
+          Simpan
+        </button>
+      </div>
+    </form>
+  </div>
+
+</div>
+
+<script>
+const editModal = document.getElementById('editModal');
+const editUrl = document.getElementById('editUrl');
+
+function openEditModal(id, url) {
+  document.getElementById('editForm').action =
+    '{{ url_for("admin.video_edit", video_id=0) }}'.replace('0', id);
+  editUrl.value = url;
+  editModal.classList.remove('hidden');
+  editModal.classList.add('flex');
+}
+
+function closeEditModal() {
+  editModal.classList.add('hidden');
+  editModal.classList.remove('flex');
+}
+
+editModal.addEventListener('click', e => {
+  if (e.target === editModal) closeEditModal();
+});
+</script>
+
+{% endblock %}
